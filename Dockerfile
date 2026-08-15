@@ -5,7 +5,7 @@ FROM golang:1.24-alpine AS build
 ARG CURL_VERSION=8.21.0
 ARG CURL_SHA256=d9b327997999045a24cda50f3983e69e51c516bd8be6ef9842fc7f99135e33bb
 
-RUN apk add --no-cache gcc musl-dev make perl openssl-dev zlib-dev ca-certificates \
+RUN apk add --no-cache curl gcc musl-dev make perl mbedtls-dev mbedtls-static zlib-dev zlib-static ca-certificates \
  && curl -fsSL "https://curl.se/download/curl-${CURL_VERSION}.tar.gz" -o /curl.tar.gz \
  && echo "${CURL_SHA256}  /curl.tar.gz" | sha256sum -c - \
  && mkdir /src \
@@ -13,12 +13,12 @@ RUN apk add --no-cache gcc musl-dev make perl openssl-dev zlib-dev ca-certificat
  && cd /src \
  && ./configure --prefix=/out \
       --disable-shared --enable-static \
-      --with-openssl --with-zlib \
+      --with-mbedtls --with-zlib \
       --disable-ldap --disable-ldaps \
       --without-libidn2 --without-librtmp --without-libpsl \
       --without-nghttp2 --without-brotli \
       --disable-docs --disable-manual \
- && make -j"$(nproc)" \
+ && make -j"$(nproc)" LDFLAGS="-all-static" \
  && make install \
  && cd / \
  && rm -rf /src /curl.tar.gz
