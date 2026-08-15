@@ -204,6 +204,29 @@ func TestCreateRollsBackOnSaveFailure(t *testing.T) {
 	}
 }
 
+func TestUpdateRollsBackOnSaveFailure(t *testing.T) {
+	c := newTestController(t, &failingStore{memStore{jobs: []Job{
+		{Id: "a", Schedule: "*/5 * * * *", Curl: "curl http://x", Enabled: true},
+	}}})
+	if _, ok := c.entries["a"]; !ok {
+		t.Fatal("seeded enabled job should be registered with cron")
+	}
+	_, err := c.Update("a", Job{Schedule: "0 0 * * *", Curl: "curl http://y", Enabled: false})
+	if !errors.Is(err, ErrStorage) {
+		t.Fatalf("want ErrStorage, got %v", err)
+	}
+	got, err := c.Get("a")
+	if err != nil {
+		t.Fatalf("job should remain gettable after rollback: %v", err)
+	}
+	if got.Schedule != "*/5 * * * *" || got.Curl != "curl http://x" || !got.Enabled {
+		t.Errorf("in-memory job should match original, got %+v", got)
+	}
+	if _, ok := c.entries["a"]; !ok {
+		t.Error("cron entry should match original enabled job after rollback")
+	}
+}
+
 func TestListPreservesOrder(t *testing.T) {
 	c := newTestController(t, &memStore{})
 	for _, id := range []string{"c", "a", "b"} {

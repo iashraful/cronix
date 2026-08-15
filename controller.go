@@ -148,7 +148,14 @@ func (c *Controller) Update(id string, next Job) (Job, error) {
 		}
 	}
 	if err := c.saveLocked(); err != nil {
+		// roll back to the original job and its cron registration
 		c.jobs[id] = cur
+		c.unregister(id)
+		if cur.Enabled {
+			if err := c.register(cur); err != nil {
+				log.Printf("rollback: re-register %s: %v", id, err)
+			}
+		}
 		return Job{}, err
 	}
 	log.Printf("job=%s updated", id)
