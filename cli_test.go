@@ -68,3 +68,36 @@ func TestRunCLICommandDoesNotExist(t *testing.T) {
 		t.Fatalf("want exit 1, got %d", code)
 	}
 }
+
+func TestRunCLIUsageListsFlagsBeforeID(t *testing.T) {
+	out := new(bytes.Buffer)
+	if code := runCLIIn([]string{"help"}, out); code != 0 {
+		t.Fatalf("help: want exit 0, got %d", code)
+	}
+	usage := out.String()
+	for _, want := range []string{
+		"get [--addr",
+		"update [--name",
+		"delete [--addr",
+		"enable [--addr",
+		"disable [--addr",
+		"run [--addr",
+	} {
+		if !strings.Contains(usage, want) {
+			t.Errorf("usage must list flags before <id> (Go flag stops at the first positional arg), missing %q:\n%s", want, usage)
+		}
+	}
+}
+
+func TestRunCLIGetIdFirstWithFlagsPrintsFlagFirstUsage(t *testing.T) {
+	out := new(bytes.Buffer)
+	// `get <id> --token X` hits Go's flag parser which stops at the positional
+	// arg; the resulting usage text must honestly show flags before <id>.
+	code := runCLIIn([]string{"get", "someid", "--token", "x"}, out)
+	if code != 1 {
+		t.Fatalf("want exit 1 for id-before-flags, got %d", code)
+	}
+	if got := out.String(); !strings.Contains(got, "usage: cronix cli get [--addr") {
+		t.Errorf("usage should be flag-first, got: %s", got)
+	}
+}

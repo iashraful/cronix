@@ -12,6 +12,11 @@ import (
 
 const outputCap = 4096
 
+// ErrCommandFailed marks a domain outcome: the binary started but the final
+// attempt exited non-zero. It is distinct from server faults (unparseable
+// command, binary missing) which stay ordinary errors.
+var ErrCommandFailed = errors.New("command failed after exhausting retries")
+
 type Result struct {
 	Attempt  int    `json:"attempt"`
 	Total    int    `json:"total"`
@@ -77,5 +82,5 @@ func Run(job Job, curlPath string) ([]Result, error) {
 			time.Sleep(time.Duration(job.RetryDelay) * time.Second)
 		}
 	}
-	return results, fmt.Errorf("job %s failed after %d attempts (last exit=%d)", job.Id, total, lastExit)
+	return results, fmt.Errorf("%w: job %s failed after %d attempts (last exit=%d)", ErrCommandFailed, job.Id, total, lastExit)
 }

@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type memStore struct {
@@ -265,5 +269,69 @@ func TestControllerConcurrentMutationsNoPanic(t *testing.T) {
 	c.List()
 	if n := len(mem.jobs); n > 4 {
 		t.Errorf("more jobs than distinct ids possible: %d", n)
+	}
+}
+
+// TestScheduledFireUsesLiveCurlAfterUpdate verifies that a fire reads the LIVE
+// job from the controller at run time: updating ONLY curl (leaving schedule and
+// enabled unchanged, so the cron entry is untouched) must change what a
+// scheduled fire executes.
+func TestScheduledFireUsesLiveCurlAfterUpdate(t *testing.T) {
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	// /usr/bin/env acts as the "curl" binary: it execs its first argument, so
+	// "curl true" exits 0 and "curl false" exits non-zero.
+	c, err := NewController(&memStore{}, "/usr/bin/env")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	if _, err := c.Create(Job{Id: "a", Schedule: "* * * * *", Curl: "curl true", Enabled: true}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := c.Update("a", Job{Id: "a", Schedule: "* * * * *", Curl: "curl false", Enabled: true}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	entryID, ok := c.entries["a"]
+	if !ok {
+		t.Fatal("enabled job must stay registered after a curl-only update")
+	}
+	logs.Reset()
+	c.cron.Entry(entryID).Job.Run()
+	got := logs.String()
+	if !strings.Contains(got, "attempt=1/1") {
+		t.Fatalf("scheduled fire did not run; logs:\n%s", got)
+	}
+	if !strings.Contains(got, "exit=1") {
+		t.Errorf("fire should execute the LIVE curl %q (exit=1 via /usr/bin/false), but logs show a stale run:\n%s",
+			"curl false", got)
+	}
+}
+
+// TestConcurrentRunsDoNotInterleave proves that two manual runs of the same job
+// are serialized (per the design spec) rather than executing in parallel.
+func TestConcurrentRunsDoNotInterleave(t *testing.T) {
+	// /bin/sleep sleeps for its first argument, so each run takes ~600ms.
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl 0.6", Enabled: true},
+	}}, "/bin/sleep")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	start := time.Now()
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := c.Run("a"); err != nil {
+				t.Errorf("run: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if elapsed := time.Since(start); elapsed < 1100*time.Millisecond {
+		t.Errorf("two runs of a 600ms job must not interleave; want serialized ~1.2s, got %v", elapsed)
 	}
 }

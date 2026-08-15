@@ -108,7 +108,11 @@ docker run --rm -d --name cronix \
 
 ## CLI
 
-`/cronix cli <command> [args] [flags]`
+`/cronix cli <command> [flags] [args]`
+
+Flags must precede the positional `<id>`: Go's `flag` package stops parsing at
+the first non-flag argument, so `/cronix cli get --token sekrit <id>` works but
+`/cronix cli get <id> --token sekrit` is a usage error.
 
 Common flags:
 
@@ -124,14 +128,14 @@ Run it from your host with `docker exec <container> /cronix cli ...`, e.g.
 
 | Command | Description |
 |---|---|
-| `list` | List jobs as a table. |
-| `get <id>` | Show one job as JSON. |
-| `add ...` | Create a job; prints `created <id>`. |
-| `update <id> ...` | Replace a job (partial: only flags you set change). |
-| `delete <id>` | Delete a job; prints `deleted <id>`. |
-| `enable <id>` | Resume a disabled job. |
-| `disable <id>` | Pause a job (stops firing). |
-| `run <id>` | Run a job now; prints one line per attempt. |
+| `list [--addr URL] [--token TOKEN]` | List jobs as a table. |
+| `get [--addr URL] [--token TOKEN] <id>` | Show one job as JSON. |
+| `add [flags]` | Create a job; prints `created <id>`. |
+| `update [flags] <id>` | Replace a job (partial: only flags you set change). |
+| `delete [--addr URL] [--token TOKEN] <id>` | Delete a job; prints `deleted <id>`. |
+| `enable [--addr URL] [--token TOKEN] <id>` | Resume a disabled job. |
+| `disable [--addr URL] [--token TOKEN] <id>` | Pause a job (stops firing). |
+| `run [--addr URL] [--token TOKEN] <id>` | Run a job now; prints one line per attempt. |
 | `help` | Print usage. |
 
 `add`/`update` flags:

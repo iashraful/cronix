@@ -28,6 +28,7 @@ func wrapValidation(format string, a ...any) error {
 
 type Controller struct {
 	mu       sync.Mutex
+	runMu    sync.Mutex
 	store    Store
 	cron     *cron.Cron
 	jobs     map[string]Job
@@ -225,14 +226,13 @@ func (c *Controller) setEnabled(id string, enabled bool) error {
 }
 
 func (c *Controller) Run(id string) ([]Result, error) {
-	c.mu.Lock()
-	job, ok := c.jobs[id]
-	c.mu.Unlock()
+	job, ok := c.jobByID(id)
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
-	results, runErr := Run(job, c.curlPath)
-	return results, runErr
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	return Run(job, c.curlPath)
 }
 
 func (c *Controller) validate(j Job) error {
@@ -261,9 +261,8 @@ func (c *Controller) register(job Job) error {
 	if !job.Enabled {
 		return nil
 	}
-	jobCopy := job
 	entryID, err := c.cron.AddFunc(job.Schedule, func() {
-		c.fire(jobCopy)
+		c.fire(job.Id)
 	})
 	if err != nil {
 		return err
@@ -309,7 +308,13 @@ func (c *Controller) snapshot() []Job {
 	return out
 }
 
-func (c *Controller) fire(job Job) {
+func (c *Controller) fire(id string) {
+	job, ok := c.jobByID(id)
+	if !ok {
+		return
+	}
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
 	results, err := Run(job, c.curlPath)
 	for _, r := range results {
 		log.Printf("job=%s schedule=%q attempt=%d/%d exit=%d output=%s",
@@ -318,6 +323,16 @@ func (c *Controller) fire(job Job) {
 	if err != nil {
 		log.Printf("job=%s failed: %v", job.Id, err)
 	}
+}
+
+// jobByID copies the live job under the controller mutex. It is used by both
+// the manual run path and scheduled fires so the job's current curl/retries are
+// always read at run time.
+func (c *Controller) jobByID(id string) (Job, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	job, ok := c.jobs[id]
+	return job, ok
 }
 
 func genID() string {

@@ -167,3 +167,44 @@ func TestAPIRunManual(t *testing.T) {
 		t.Fatal("want at least one run step")
 	}
 }
+
+func TestAPIRunExhaustedRetriesStillReturns200WithSteps(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Retries: 1, RetryDelay: 0, Enabled: true},
+	}}, "/usr/bin/false")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, "secret")
+	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("run with exhausted retries: want 200 with completed steps, got %d: %s", w.Code, b)
+	}
+	var resp struct {
+		Steps []Result `json:"steps"`
+	}
+	if err := json.Unmarshal(b, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Steps) != 2 {
+		t.Fatalf("retries=1 should produce 2 steps, got %d: %+v", len(resp.Steps), resp.Steps)
+	}
+	last := resp.Steps[len(resp.Steps)-1]
+	if last.ExitCode == 0 {
+		t.Errorf("final step should have non-zero exit, got %+v", last)
+	}
+}
+
+func TestAPIRunStartupFailureReturns500(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, "/nonexistent/curl")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, "secret")
+	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("cannot-start-binary must stay a 500, got %d: %s", w.Code, b)
+	}
+}

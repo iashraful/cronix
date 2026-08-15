@@ -101,7 +101,7 @@ func cliGet(args []string, out io.Writer) int {
 		return 1
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(out, "usage: cronix cli get <id> [--addr URL] [--token TOKEN]")
+		fmt.Fprintln(out, "usage: cronix cli get [--addr URL] [--token TOKEN] <id>")
 		return 1
 	}
 	status, body, err := cliHTTP("GET", opts.addr+"/api/v1/jobs/"+fs.Arg(0), opts.token, nil)
@@ -170,7 +170,7 @@ func cliUpdate(args []string, out io.Writer) int {
 		return 1
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(out, "usage: cronix cli update <id> [--schedule S] [--curl C] ...")
+		fmt.Fprintln(out, "usage: cronix cli update [--name N] [--schedule S] [--curl C] [--retries N] [--retry-delay S] [--enabled B] <id>")
 		return 1
 	}
 	id := fs.Arg(0)
@@ -229,7 +229,7 @@ func cliDelete(args []string, out io.Writer) int {
 		return 1
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(out, "usage: cronix cli delete <id> [--addr URL] [--token TOKEN]")
+		fmt.Fprintln(out, "usage: cronix cli delete [--addr URL] [--token TOKEN] <id>")
 		return 1
 	}
 	status, resp, err := cliHTTP("DELETE", opts.addr+"/api/v1/jobs/"+fs.Arg(0), opts.token, nil)
@@ -256,7 +256,7 @@ func cliSetEnabled(args []string, out io.Writer, enabled bool) int {
 		return 1
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintf(out, "usage: cronix cli %s <id> [--addr URL] [--token TOKEN]\n", cmd)
+		fmt.Fprintf(out, "usage: cronix cli %s [--addr URL] [--token TOKEN] <id>\n", cmd)
 		return 1
 	}
 	id := fs.Arg(0)
@@ -307,7 +307,7 @@ func cliRun(args []string, out io.Writer) int {
 		return 1
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintln(out, "usage: cronix cli run <id> [--addr URL] [--token TOKEN]")
+		fmt.Fprintln(out, "usage: cronix cli run [--addr URL] [--token TOKEN] <id>")
 		return 1
 	}
 	status, resp, err := cliHTTP("POST", opts.addr+"/api/v1/jobs/"+fs.Arg(0)+"/run", opts.token, nil)
@@ -373,16 +373,24 @@ func cliErr(out io.Writer, status int, body []byte) int {
 
 func usage(out io.Writer) {
 	fmt.Fprintf(out, `usage: cronix [cli <command>] ...
+Flags must precede the positional <id> (Go's flag package stops parsing at the
+first non-flag argument), e.g. "get --addr URL --token TOKEN <id>".
 
 Commands:
-  list                        list jobs
-  get <id>                    show one job
-  add ...                     create a job
-  update <id> ...             replace a job
-  delete <id>                 delete a job
-  enable <id>                 enable a paused job
-  disable <id>                disable a job
-  run <id>                    run a job now
+  list                              list jobs
+  get [--addr URL] [--token TOKEN] <id>
+                                    show one job
+  add ...                           create a job
+  update [--name N] [--schedule S] [--curl C] [--retries N] [--retry-delay S] [--enabled B] <id>
+                                    replace a job
+  delete [--addr URL] [--token TOKEN] <id>
+                                    delete a job
+  enable [--addr URL] [--token TOKEN] <id>
+                                    enable a paused job
+  disable [--addr URL] [--token TOKEN] <id>
+                                    disable a job
+  run [--addr URL] [--token TOKEN] <id>
+                                    run a job now
 
 Common flags: --addr URL (default %s)  --token TOKEN (default $CRONIX_API_TOKEN)
 add/update flags: --id --name --schedule --curl --retries --retry-delay --enabled
