@@ -3,66 +3,69 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/robfig/cron/v3"
 )
 
-func envLookup(name string) (string, bool) {
-	return os.LookupEnv(name)
+const (
+	defaultStorePath = "/data/jobs.json"
+	defaultHTTPAddr  = ":8080"
+	defaultCurlPath  = "/usr/local/bin/curl"
+)
+
+func envOr(name, def string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return def
 }
 
 func main() {
-	curlPath := os.Getenv("CURL_PATH")
-	if curlPath == "" {
-		curlPath = "/usr/local/bin/curl"
+	if len(os.Args) > 1 && os.Args[1] == "cli" {
+		os.Exit(RunCLI(os.Args[2:]))
 	}
 
-	jobs, err := LoadJobs(envLookup)
+	token := os.Getenv("CRONIX_API_TOKEN")
+	if strings.TrimSpace(token) == "" {
+		log.Fatalf("CRONIX_API_TOKEN is required; refusing to start")
+	}
+
+	storePath := envOr("CRONIX_STORE_PATH", defaultStorePath)
+	httpAddr := envOr("CRONIX_HTTP_ADDR", defaultHTTPAddr)
+	curlPath := envOr("CURL_PATH", defaultCurlPath)
+
+	ctrl, err := NewController(NewFileStore(storePath), curlPath)
 	if err != nil {
-		log.Fatalf("config error: %v", err)
-	}
-	if len(jobs) == 0 {
-		log.Fatalf("no jobs configured: set CRON_SCHEDULE_0 and CRON_CURL_0")
-	}
-	for _, job := range jobs {
-		if _, err := ParseCommand(job.Curl); err != nil {
-			log.Fatalf("job %s: %v", job.Id, err)
-		}
+		log.Fatalf("startup error: %v", err)
 	}
 
-	c := cron.New()
-	for _, job := range jobs {
-		j := job
-		if _, err := c.AddFunc(j.Schedule, func() {
-			results, err := Run(j, curlPath)
-			for _, r := range results {
-				log.Printf("job=%s schedule=%q attempt=%d/%d exit=%d output=%s",
-					j.Id, j.Schedule, r.Attempt, r.Total, r.ExitCode, strings.TrimSpace(r.Output))
-			}
-			if err != nil {
-				log.Printf("job=%s failed: %v", j.Id, err)
-			}
-		}); err != nil {
-			log.Fatalf("job %s: %v", j.Id, err)
-		}
-	}
-
+	jobs := ctrl.List()
 	log.Printf("cronix started with %d job(s)", len(jobs))
-	c.Start()
+	if len(jobs) == 0 {
+		log.Printf("no jobs configured; add one with '/cronix cli add' or the web UI at http://%s", httpAddr)
+	}
+	ctrl.Start()
+
+	srv := &http.Server{Addr: httpAddr, Handler: NewServer(ctrl, token)}
+	go func() {
+		log.Printf("api listening on %s", httpAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("api server: %v", err)
+		}
+	}()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	<-ctx.Done()
 
 	log.Printf("shutting down")
-	done := c.Stop()
+	done := ctrl.Stop()
 	select {
-	case <-done.Done():
+	case <-done:
 	case <-time.After(10 * time.Second):
 		log.Printf("in-flight jobs did not finish in 10s; exiting")
 	}
