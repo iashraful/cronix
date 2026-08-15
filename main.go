@@ -31,7 +31,7 @@ func main() {
 	}
 	for _, job := range jobs {
 		if _, err := ParseCommand(job.Curl); err != nil {
-			log.Fatalf("job %d: %v", job.Index, err)
+			log.Fatalf("job %s: %v", job.Id, err)
 		}
 	}
 
@@ -41,14 +41,14 @@ func main() {
 		if _, err := c.AddFunc(j.Schedule, func() {
 			results, err := Run(j, curlPath)
 			for _, r := range results {
-				log.Printf("job=%d schedule=%q attempt=%d/%d exit=%d output=%s",
-					j.Index, j.Schedule, r.Attempt, r.Total, r.ExitCode, strings.TrimSpace(r.Output))
+				log.Printf("job=%s schedule=%q attempt=%d/%d exit=%d output=%s",
+					j.Id, j.Schedule, r.Attempt, r.Total, r.ExitCode, strings.TrimSpace(r.Output))
 			}
 			if err != nil {
-				log.Printf("job=%d failed: %v", j.Index, err)
+				log.Printf("job=%s failed: %v", j.Id, err)
 			}
 		}); err != nil {
-			log.Fatalf("job %d: %v", j.Index, err)
+			log.Fatalf("job %s: %v", j.Id, err)
 		}
 	}
 

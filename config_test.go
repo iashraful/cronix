@@ -3,7 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func lookup(m map[string]string) func(string) (string, bool) {
@@ -27,10 +26,10 @@ func TestLoadJobsParsesPairs(t *testing.T) {
 	if len(jobs) != 2 {
 		t.Fatalf("want 2 jobs, got %d", len(jobs))
 	}
-	if jobs[0].Index != 0 || jobs[0].Schedule != "*/5 * * * *" || jobs[0].Curl != "curl -s https://example.com" {
+	if jobs[0].Id != "0" || jobs[0].Schedule != "*/5 * * * *" || jobs[0].Curl != "curl -s https://example.com" || !jobs[0].Enabled {
 		t.Errorf("job 0 wrong: %+v", jobs[0])
 	}
-	if jobs[1].Index != 1 || jobs[1].Schedule != "* * * * *" {
+	if jobs[1].Id != "1" || jobs[1].Schedule != "* * * * *" {
 		t.Errorf("job 1 wrong: %+v", jobs[1])
 	}
 }
@@ -88,8 +87,8 @@ func TestLoadJobsRetryDefaults(t *testing.T) {
 	if jobs[0].Retries != 0 {
 		t.Errorf("default retries want 0, got %d", jobs[0].Retries)
 	}
-	if jobs[0].RetryDelay != 5*time.Second {
-		t.Errorf("default retry delay want 5s, got %v", jobs[0].RetryDelay)
+	if jobs[0].RetryDelay != 5 {
+		t.Errorf("default retry delay want 5, got %d", jobs[0].RetryDelay)
 	}
 }
 
@@ -107,8 +106,8 @@ func TestLoadJobsRetryParsing(t *testing.T) {
 	if jobs[0].Retries != 3 {
 		t.Errorf("retries want 3, got %d", jobs[0].Retries)
 	}
-	if jobs[0].RetryDelay != 10*time.Second {
-		t.Errorf("retry delay want 10s, got %v", jobs[0].RetryDelay)
+	if jobs[0].RetryDelay != 10 {
+		t.Errorf("retry delay want 10, got %d", jobs[0].RetryDelay)
 	}
 }
 

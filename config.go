@@ -3,18 +3,9 @@ package main
 import (
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/robfig/cron/v3"
 )
-
-type Job struct {
-	Index      int
-	Schedule   string
-	Curl       string
-	Retries    int
-	RetryDelay time.Duration
-}
 
 func LoadJobs(lookup func(string) (string, bool)) ([]Job, error) {
 	var jobs []Job
@@ -41,11 +32,12 @@ func LoadJobs(lookup func(string) (string, bool)) ([]Job, error) {
 			return nil, err
 		}
 		jobs = append(jobs, Job{
-			Index:      i,
+			Id:         strconv.Itoa(i),
 			Schedule:   schedule,
 			Curl:       cmd,
 			Retries:    retries,
-			RetryDelay: time.Duration(delaySec) * time.Second,
+			RetryDelay: delaySec,
+			Enabled:    true,
 		})
 	}
 	return jobs, nil

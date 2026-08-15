@@ -13,10 +13,10 @@ import (
 const outputCap = 4096
 
 type Result struct {
-	Attempt  int
-	Total    int
-	ExitCode int
-	Output   string
+	Attempt  int    `json:"attempt"`
+	Total    int    `json:"total"`
+	ExitCode int    `json:"exit"`
+	Output   string `json:"output"`
 }
 
 func ParseCommand(cmd string) ([]string, error) {
@@ -74,8 +74,8 @@ func Run(job Job, curlPath string) ([]Result, error) {
 			return results, nil
 		}
 		if attempt < total {
-			time.Sleep(job.RetryDelay)
+			time.Sleep(time.Duration(job.RetryDelay) * time.Second)
 		}
 	}
-	return results, fmt.Errorf("job %d failed after %d attempts (last exit=%d)", job.Index, total, lastExit)
+	return results, fmt.Errorf("job %s failed after %d attempts (last exit=%d)", job.Id, total, lastExit)
 }
