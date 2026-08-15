@@ -62,6 +62,7 @@ func NewServer(ctrl *Controller, token string) http.Handler {
 	mux.HandleFunc("PUT /api/v1/jobs/{id}", s.auth(s.handleUpdate))
 	mux.HandleFunc("DELETE /api/v1/jobs/{id}", s.auth(s.handleDelete))
 	mux.HandleFunc("POST /api/v1/jobs/{id}/run", s.auth(s.handleRun))
+	mux.Handle("GET /", SPAHandler())
 	return mux
 }
 

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cronix</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Cronix</h1>
+    <input id="token" type="password" placeholder="API token" autocomplete="off">
+    <button id="save-token">Save</button>
+  </header>
+  <main>
+    <section id="login" hidden>
+      <p>Enter your API token above to continue.</p>
+    </section>
+    <section id="app" hidden>
+      <div id="error" class="error" hidden></div>
+      <div class="toolbar">
+        <button id="new-job">New job</button>
+      </div>
+      <table id="jobs">
+        <thead><tr><th>ID</th><th>Name</th><th>Enabled</th><th>Schedule</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+    <section id="editor" hidden>
+      <h2 id="editor-title">New job</h2>
+      <form id="job-form">
+        <input type="hidden" id="field-id">
+        <label>Name <input id="field-name" type="text"></label>
+        <label>Schedule <input id="field-schedule" type="text" placeholder="*/5 * * * *"></label>
+        <label>Curl <input id="field-curl" type="text" placeholder="curl -s https://example.com"></label>
+        <label>Retries <input id="field-retries" type="number" value="0" min="0"></label>
+        <label>Retry delay (s) <input id="field-retry-delay" type="number" value="5" min="0"></label>
+        <label><input id="field-enabled" type="checkbox" checked> Enabled</label>
+        <div id="field-errors" class="error" hidden></div>
+        <button type="submit">Save</button>
+        <button type="button" id="editor-cancel">Cancel</button>
+      </form>
+    </section>
+    <section id="run-panel" hidden>
+      <h2>Run output</h2>
+      <pre id="run-output"></pre>
+      <button id="run-close">Close</button>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
