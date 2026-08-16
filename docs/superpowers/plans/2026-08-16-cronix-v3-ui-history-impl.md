@@ -249,11 +249,11 @@ func atomicWriteFile(pattern, path string, data []byte) error {
 	if err := os.Chmod(tmpName, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, f.Path)
+	return os.Rename(tmpName, path)
 }
 ```
 
-Note the renamed parameter: inside `atomicWriteFile` the final rename target is the `path` argument, NOT `f.Path`. The code above is the full corrected body — do not copy `f.Path` verbatim from the original `Save`.
+Note the renamed parameter: inside `atomicWriteFile` the final rename target is the `path` argument, NOT `f.Path` (there is no `f` receiver here). The code above is the full corrected body — do not copy `f.Path` verbatim from the original `Save`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
