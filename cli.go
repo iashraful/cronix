@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"text/tabwriter"
 )
 
@@ -310,7 +309,13 @@ func cliRun(args []string, out io.Writer) int {
 		fmt.Fprintln(out, "usage: cronix cli run [--addr URL] [--token TOKEN] <id>")
 		return 1
 	}
-	status, resp, err := cliHTTP("POST", opts.addr+"/api/v1/jobs/"+fs.Arg(0)+"/run", opts.token, nil)
+	id := fs.Arg(0)
+	job, err := cliGetJob(opts, id)
+	if err != nil {
+		fmt.Fprintf(out, "error: %v\n", err)
+		return 2
+	}
+	status, resp, err := cliHTTP("POST", opts.addr+"/api/v1/jobs/"+id+"/run", opts.token, nil)
 	if err != nil {
 		fmt.Fprintf(out, "error: %v\n", err)
 		return 2
@@ -325,10 +330,11 @@ func cliRun(args []string, out io.Writer) int {
 		fmt.Fprintf(out, "error: cannot decode run: %v\n", err)
 		return 2
 	}
-	for _, r := range runResp.Steps {
-		fmt.Fprintf(out, "attempt=%d/%d exit=%d output=%s\n",
-			r.Attempt, r.Total, r.ExitCode, strings.TrimSpace(r.Output))
+	var runErr error
+	if n := len(runResp.Steps); n > 0 && runResp.Steps[n-1].ExitCode != 0 {
+		runErr = ErrCommandFailed
 	}
+	fmt.Fprintln(out, formatRun(job, runResp.Steps, runErr))
 	return 0
 }
 

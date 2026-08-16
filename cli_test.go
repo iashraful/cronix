@@ -89,6 +89,46 @@ func TestRunCLIUsageListsFlagsBeforeID(t *testing.T) {
 	}
 }
 
+func TestRunCLIRunPrintsBlock(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Name: "ping", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, "/usr/bin/true")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	addr := withCLIServer(t, NewServer(c, "tok"))
+	out := new(bytes.Buffer)
+	code := runCLIIn([]string{"run", "--addr", addr, "--token", "tok", "a"}, out)
+	if code != 0 {
+		t.Fatalf("run: want exit 0, got %d: %s", code, out.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "run job=a") || !strings.Contains(got, "name=ping") {
+		t.Errorf("run output should include job context:\n%s", got)
+	}
+	if !strings.Contains(got, "result: OK") {
+		t.Errorf("run output should include result: OK:\n%s", got)
+	}
+}
+
+func TestRunCLIRunFailedPrintsFailedBlock(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, "/usr/bin/false")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	addr := withCLIServer(t, NewServer(c, "tok"))
+	out := new(bytes.Buffer)
+	code := runCLIIn([]string{"run", "--addr", addr, "--token", "tok", "a"}, out)
+	if code != 0 {
+		t.Fatalf("run: want exit 0 (domain failure), got %d: %s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "result: FAILED") {
+		t.Errorf("failed run output should include result: FAILED:\n%s", out.String())
+	}
+}
+
 func TestRunCLIGetIdFirstWithFlagsPrintsFlagFirstUsage(t *testing.T) {
 	out := new(bytes.Buffer)
 	// `get <id> --token X` hits Go's flag parser which stops at the positional
