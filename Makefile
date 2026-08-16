@@ -6,7 +6,7 @@ PORT      ?= 7002
 DATA_DIR  := .data
 STORE     := $(DATA_DIR)/jobs.json
 
-.PHONY: help build test vet lint run \
+.PHONY: help build test vet lint run ui \
         docker-build docker-run docker-logs docker-stop \
         cli-list cli-add cli-run \
         clean
@@ -17,6 +17,7 @@ help:
 	@echo "  test           run all Go tests"
 	@echo "  vet            run go vet"
 	@echo "  lint           check gofmt"
+	@echo "  ui              build the React UI into web/ (npm ci + vite build)"
 	@echo "  run            run the server locally (token: $$CRONIX_API_TOKEN or $(TOKEN))"
 	@echo "  docker-build   build the Docker image"
 	@echo "  docker-run     start the container (volume $(DATA_DIR), port $(PORT))"
@@ -39,6 +40,10 @@ vet:
 lint:
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1)
 
+ui:
+	npm --prefix ui ci
+	npm --prefix ui run build
+
 run:
 	mkdir -p $(DATA_DIR)
 	CRONIX_API_TOKEN=$${CRONIX_API_TOKEN:-$(TOKEN)} \
@@ -49,6 +54,7 @@ docker-build:
 	docker build -t $(IMAGE) .
 
 docker-run:
+	docker rm -f $(CONTAINER) 2>/dev/null || true
 	mkdir -p $(DATA_DIR)
 	docker run --rm -d --name $(CONTAINER) \
 		-e CRONIX_API_TOKEN=$${CRONIX_API_TOKEN:-$(TOKEN)} \

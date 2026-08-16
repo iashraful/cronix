@@ -41,6 +41,7 @@ On the first start the server logs that no jobs are configured; add one with
 |---|---|---|
 | `CRONIX_API_TOKEN` | — | **Required.** Bearer token for the REST API and web UI. The server refuses to start without it. |
 | `CRONIX_STORE_PATH` | `/data/jobs.json` | Path to the JSON store. The directory is created if missing. |
+| `CRONIX_RUNS_PATH` | `/data/runs.json` | Path to the run-history store. Keeps the last 50 runs per job. |
 | `CRONIX_HTTP_ADDR` | `:8080` | Address the HTTP server listens on. |
 | `CURL_PATH` | `/usr/local/bin/curl` | Path to the `curl` binary used to run jobs. |
 | `TZ` | container local time | Timezone the cron scheduler uses. Set e.g. `TZ=America/New_York` (see below). |
@@ -172,6 +173,7 @@ Errors return `{"error": "..."}` with status `400` (validation), `404`
 | `GET /api/v1/jobs/{id}` | Get one job. | `200` job |
 | `PUT /api/v1/jobs/{id}` | Replace a job (full body). | `200` updated job |
 | `DELETE /api/v1/jobs/{id}` | Delete a job. | `204` empty |
+| `GET /api/v1/jobs/{id}/runs` | List a job's run history, newest first (capped at 50). | `200` `{"runs":[{...}]}` |
 | `POST /api/v1/jobs/{id}/run` | Run a job now. | `200` `{"steps":[{...}]}` |
 
 Job body (create and update):
@@ -216,6 +218,11 @@ Get the UI at `/` from the host: `http://localhost:8080`. Enter the API token
 (saved in session storage), then create, edit, enable/disable, run, and delete
 jobs. The UI is a small static single-page app embedded into the binary via
 `go:embed` (`web/index.html`, `web/app.js`, `web/style.css`).
+
+The UI source lives in `ui/` (Vite + React). Rebuild it with `make ui` (runs
+`npm ci` and the production build). For development, `npm --prefix ui run dev`
+starts the Vite dev server with a `/api` proxy to `http://127.0.0.1:8080`, so
+you get hot reload while the running server serves the API.
 
 ## Command Syntax and Limits
 
@@ -274,8 +281,13 @@ docker build -t cronix .
 
 The `Dockerfile` compiles `curl` statically (pinned version + SHA256) in a
 `golang:1.24-alpine` build stage and copies only the resulting binary, the
-Cronix binary, and certificates into `scratch`. The first build takes a few
-minutes to compile curl; later builds reuse the cache.
+Cronix binary, and certificates into `scratch`. A `node:22-alpine` stage runs
+`npm ci` + `vite build` and copies the output into the Go stage, so the image
+embeds the UI. The first build takes a few minutes to compile curl; later
+builds reuse the cache.
+
+The built `web/` assets are committed, so a plain `go build` needs no Node
+toolchain; only the Docker image (or `make ui`) invokes npm.
 
 ### Tests
 
