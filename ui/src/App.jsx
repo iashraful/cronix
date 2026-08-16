@@ -106,7 +106,7 @@ function HistoryPanel({ runs, onClose }) {
         runs.map((r, i) => (
           <pre key={i}>
 {r.trigger} {r.time ? relativeTime(r.time) : ''} — {r.status} exit={r.exit_code}
-{r.results.map((s) => `  attempt ${s.attempt}/${s.total} exit=${s.exit}${s.output ? `: ${s.output}` : ''}`).join('\n')}
+{(r.results || []).map((s) => `  attempt ${s.attempt}/${s.total} exit=${s.exit}${s.output ? `: ${s.output}` : ''}`).join('\n')}
           </pre>
         ))
       )}

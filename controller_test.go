@@ -477,6 +477,23 @@ func TestDeletePrunesHistory(t *testing.T) {
 	}
 }
 
+func TestRecordRunSkipsDeletedJob(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl true", Enabled: true},
+	}}, &memRunStore{}, "/usr/bin/env")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	if err := c.Delete("a"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	c.recordRun(Job{Id: "a"}, "scheduled",
+		[]Result{{Attempt: 1, Total: 1, ExitCode: 0, Output: "late fire"}}, nil)
+	if ls := c.LastRun("a"); ls != nil {
+		t.Errorf("a fire racing a delete must not retain a run: %+v", ls)
+	}
+}
+
 func TestNewControllerLoadsAndPrunesRunHistory(t *testing.T) {
 	store := &memRunStore{runs: []Run{
 		{JobId: "a", Trigger: "manual", Time: time.Now().UTC(), Status: "ok", ExitCode: 0},

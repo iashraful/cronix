@@ -217,7 +217,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/jobs/<id>/run"
 Get the UI at `/` from the host: `http://localhost:8080`. Enter the API token
 (saved in session storage), then create, edit, enable/disable, run, and delete
 jobs. The UI is a small static single-page app embedded into the binary via
-`go:embed` (`web/index.html`, `web/app.js`, `web/style.css`).
+`go:embed` (in `spa.go`, serving the built `web/` directory).
 
 The UI source lives in `ui/` (Vite + React). Rebuild it with `make ui` (runs
 `npm ci` and the production build). For development, `npm --prefix ui run dev`

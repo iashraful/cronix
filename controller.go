@@ -233,6 +233,9 @@ func (c *Controller) recordRun(job Job, trigger string, results []Result, runErr
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if _, ok := c.jobs[job.Id]; !ok {
+		return
+	}
 	c.runs[job.Id] = append([]Run{run}, c.runs[job.Id]...)
 	if len(c.runs[job.Id]) > runHistoryCap {
 		c.runs[job.Id] = c.runs[job.Id][:runHistoryCap]
