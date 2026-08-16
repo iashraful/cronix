@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -206,5 +209,49 @@ func TestAPIRunStartupFailureReturns500(t *testing.T) {
 	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("cannot-start-binary must stay a 500, got %d: %s", w.Code, b)
+	}
+}
+
+func TestAPIRunManualLogsBlockOnSuccess(t *testing.T) {
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Name: "ping", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, "/usr/bin/true")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, "secret")
+	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("run: want 200, got %d: %s", w.Code, b)
+	}
+	got := logs.String()
+	if !strings.Contains(got, "run job=a") || !strings.Contains(got, "result: OK") {
+		t.Errorf("manual run should log the block:\n%s", got)
+	}
+}
+
+func TestAPIRunManualLogsBlockOnFailure(t *testing.T) {
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Retries: 1, RetryDelay: 0, Enabled: true},
+	}}, "/usr/bin/false")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, "secret")
+	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("run with exhausted retries: want 200, got %d: %s", w.Code, b)
+	}
+	got := logs.String()
+	if !strings.Contains(got, "result: FAILED") || !strings.Contains(got, "2/2 attempts") {
+		t.Errorf("manual run failure should log the block with FAILED:\n%s", got)
 	}
 }

@@ -316,12 +316,13 @@ func (c *Controller) fire(id string) {
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
 	results, err := Run(job, c.curlPath)
+	if err != nil {
+		log.Printf("%s", formatRun(job, results, err))
+		return
+	}
 	for _, r := range results {
 		log.Printf("job=%s schedule=%q attempt=%d/%d exit=%d output=%s",
 			job.Id, job.Schedule, r.Attempt, r.Total, r.ExitCode, strings.TrimSpace(r.Output))
-	}
-	if err != nil {
-		log.Printf("job=%s failed: %v", job.Id, err)
 	}
 }
 

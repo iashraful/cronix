@@ -300,12 +300,11 @@ func TestScheduledFireUsesLiveCurlAfterUpdate(t *testing.T) {
 	logs.Reset()
 	c.cron.Entry(entryID).Job.Run()
 	got := logs.String()
-	if !strings.Contains(got, "attempt=1/1") {
-		t.Fatalf("scheduled fire did not run; logs:\n%s", got)
+	if !strings.Contains(got, "attempt 1/1 exit=1") {
+		t.Fatalf("scheduled fire did not run the live curl; logs:\n%s", got)
 	}
-	if !strings.Contains(got, "exit=1") {
-		t.Errorf("fire should execute the LIVE curl %q (exit=1 via /usr/bin/false), but logs show a stale run:\n%s",
-			"curl false", got)
+	if !strings.Contains(got, "result: FAILED") {
+		t.Errorf("failed scheduled fire should log the run block with result: FAILED:\n%s", got)
 	}
 }
 

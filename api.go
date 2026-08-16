@@ -133,20 +133,18 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
-	results, err := s.ctrl.Run(r.PathValue("id"))
-	if err != nil {
-		if errors.Is(err, ErrCommandFailed) {
-			// The binary ran and exited non-zero on every attempt; the steps are
-			// complete results and the caller should see them, not a 500.
-			log.Printf("job %s run finished with non-zero exit: %v", r.PathValue("id"), err)
-			writeJSON(w, http.StatusOK, struct {
-				Steps []Result `json:"steps"`
-			}{Steps: results})
-			return
-		}
+	id := r.PathValue("id")
+	job, gerr := s.ctrl.Get(id)
+	if gerr != nil {
+		writeCtrlError(w, gerr)
+		return
+	}
+	results, err := s.ctrl.Run(id)
+	if err != nil && !errors.Is(err, ErrCommandFailed) {
 		writeCtrlError(w, err)
 		return
 	}
+	log.Printf("%s", formatRun(job, results, err))
 	writeJSON(w, http.StatusOK, struct {
 		Steps []Result `json:"steps"`
 	}{Steps: results})
