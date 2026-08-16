@@ -13,6 +13,7 @@ import (
 
 const (
 	defaultStorePath = "/data/jobs.json"
+	defaultRunsPath  = "/data/runs.json"
 	defaultHTTPAddr  = ":8080"
 	defaultCurlPath  = "/usr/local/bin/curl"
 )
@@ -35,10 +36,11 @@ func main() {
 	}
 
 	storePath := envOr("CRONIX_STORE_PATH", defaultStorePath)
+	runsPath := envOr("CRONIX_RUNS_PATH", defaultRunsPath)
 	httpAddr := envOr("CRONIX_HTTP_ADDR", defaultHTTPAddr)
 	curlPath := envOr("CURL_PATH", defaultCurlPath)
 
-	ctrl, err := NewController(NewFileStore(storePath), curlPath)
+	ctrl, err := NewController(NewFileStore(storePath), NewFileRunStore(runsPath), curlPath)
 	if err != nil {
 		log.Fatalf("startup error: %v", err)
 	}

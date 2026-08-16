@@ -25,9 +25,26 @@ type failingStore struct{ memStore }
 
 func (f *failingStore) Save([]Job) error { return errors.New("disk full") }
 
+type memRunStore struct {
+	runs     []Run
+	loadErr  error
+	saveErr  error
+	numSaves int
+}
+
+func (m *memRunStore) LoadRuns() ([]Run, error) { return m.runs, m.loadErr }
+func (m *memRunStore) SaveRuns(r []Run) error {
+	m.runs = r
+	m.numSaves++
+	if m.saveErr != nil {
+		return m.saveErr
+	}
+	return nil
+}
+
 func newTestController(t *testing.T, store Store) *Controller {
 	t.Helper()
-	c, err := NewController(store, "/bin/true")
+	c, err := NewController(store, &memRunStore{}, "/bin/true")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -54,7 +71,7 @@ func TestNewControllerLoadsStoredJobs(t *testing.T) {
 func TestNewControllerWithBadStoredJobFails(t *testing.T) {
 	_, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Schedule: "not-cron", Curl: "curl http://x", Enabled: true},
-	}}, "/bin/true")
+	}}, &memRunStore{}, "/bin/true")
 	if err == nil {
 		t.Fatal("want error for invalid stored job")
 	}
@@ -283,7 +300,7 @@ func TestScheduledFireUsesLiveCurlAfterUpdate(t *testing.T) {
 
 	// /usr/bin/env acts as the "curl" binary: it execs its first argument, so
 	// "curl true" exits 0 and "curl false" exits non-zero.
-	c, err := NewController(&memStore{}, "/usr/bin/env")
+	c, err := NewController(&memStore{}, &memRunStore{}, "/usr/bin/env")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -314,7 +331,7 @@ func TestConcurrentRunsDoNotInterleave(t *testing.T) {
 	// /bin/sleep sleeps for its first argument, so each run takes ~600ms.
 	c, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Schedule: "* * * * *", Curl: "curl 0.6", Enabled: true},
-	}}, "/bin/sleep")
+	}}, &memRunStore{}, "/bin/sleep")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -332,5 +349,150 @@ func TestConcurrentRunsDoNotInterleave(t *testing.T) {
 	wg.Wait()
 	if elapsed := time.Since(start); elapsed < 1100*time.Millisecond {
 		t.Errorf("two runs of a 600ms job must not interleave; want serialized ~1.2s, got %v", elapsed)
+	}
+}
+
+func TestRunRecordsManualHistory(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl true", Enabled: true},
+	}}, &memRunStore{}, "/usr/bin/env")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	if _, err := c.Run("a"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	runs, err := c.History("a")
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("want 1 run, got %d", len(runs))
+	}
+	if runs[0].Trigger != "manual" || runs[0].Status != "ok" || runs[0].ExitCode != 0 {
+		t.Errorf("run record wrong: %+v", runs[0])
+	}
+	ls := c.LastRun("a")
+	if ls == nil || ls.Status != "ok" {
+		t.Errorf("last run summary wrong: %+v", ls)
+	}
+}
+
+func TestRunRecordsScheduledHistory(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl true", Enabled: true},
+	}}, &memRunStore{}, "/usr/bin/env")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	c.fire("a")
+	runs, err := c.History("a")
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(runs) != 1 || runs[0].Trigger != "scheduled" {
+		t.Errorf("scheduled fire should record trigger=scheduled: %+v", runs)
+	}
+}
+
+func TestRecordRunStatusDerivation(t *testing.T) {
+	c := newTestController(t, &memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}})
+	c.recordRun(Job{Id: "a"}, "manual", []Result{{Attempt: 1, Total: 1, ExitCode: 0}}, nil)
+	c.recordRun(Job{Id: "a"}, "manual", []Result{{Attempt: 1, Total: 1, ExitCode: 6}},
+		fmt.Errorf("%w: job a failed", ErrCommandFailed))
+	c.recordRun(Job{Id: "a"}, "manual", nil, errors.New("cannot start /bin/true"))
+	runs, _ := c.History("a")
+	if len(runs) != 3 {
+		t.Fatalf("want 3 runs, got %d", len(runs))
+	}
+	if runs[0].Status != "error" || runs[1].Status != "failed" || runs[2].Status != "ok" {
+		t.Errorf("status order wrong (newest-first): %+v", runs)
+	}
+	if runs[1].ExitCode != 6 {
+		t.Errorf("failed run should carry last exit: %+v", runs[1])
+	}
+}
+
+func TestRecordRunTrimsToCap(t *testing.T) {
+	c := newTestController(t, &memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}})
+	for i := 0; i < runHistoryCap+10; i++ {
+		c.recordRun(Job{Id: "a"}, "manual", []Result{{Attempt: 1, Total: 1, ExitCode: 0}}, nil)
+	}
+	runs, _ := c.History("a")
+	if len(runs) != runHistoryCap {
+		t.Fatalf("want %d runs, got %d", runHistoryCap, len(runs))
+	}
+}
+
+func TestRecordRunSaveFailureDoesNotFail(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, &memRunStore{saveErr: errors.New("disk full")}, "/bin/true")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	c.recordRun(Job{Id: "a"}, "manual", []Result{{Attempt: 1, Total: 1, ExitCode: 0}}, nil)
+	runs, err := c.History("a")
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatal("run must stay in the in-memory ledger even when persistence fails")
+	}
+}
+
+func TestHistoryMissingJob(t *testing.T) {
+	c := newTestController(t, &memStore{})
+	if _, err := c.History("nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestLastRunNilWhenEmpty(t *testing.T) {
+	c := newTestController(t, &memStore{})
+	if ls := c.LastRun("nope"); ls != nil {
+		t.Errorf("want nil LastRun, got %+v", ls)
+	}
+}
+
+func TestDeletePrunesHistory(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl true", Enabled: true},
+	}}, &memRunStore{}, "/usr/bin/env")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	if _, err := c.Run("a"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if err := c.Delete("a"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if ls := c.LastRun("a"); ls != nil {
+		t.Errorf("deleted job must not retain last run: %+v", ls)
+	}
+}
+
+func TestNewControllerLoadsAndPrunesRunHistory(t *testing.T) {
+	store := &memRunStore{runs: []Run{
+		{JobId: "a", Trigger: "manual", Time: time.Now().UTC(), Status: "ok", ExitCode: 0},
+		{JobId: "ghost", Trigger: "manual", Time: time.Now().UTC(), Status: "ok", ExitCode: 0},
+	}}
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, store, "/bin/true")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	runs, _ := c.History("a")
+	if len(runs) != 1 {
+		t.Fatalf("want loaded run for job a, got %d", len(runs))
+	}
+	if ls := c.LastRun("ghost"); ls != nil {
+		t.Error("runs for unknown jobs must be pruned at load")
 	}
 }

@@ -14,7 +14,7 @@ import (
 
 func newTestServer(t *testing.T, store Store) http.Handler {
 	t.Helper()
-	c, err := NewController(store, "/bin/true")
+	c, err := NewController(store, &memRunStore{}, "/bin/true")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestAPISaveFailureReturns500(t *testing.T) {
 func TestAPIRunManual(t *testing.T) {
 	c, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
-	}}, "/usr/bin/true")
+	}}, &memRunStore{}, "/usr/bin/true")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestAPIRunManual(t *testing.T) {
 func TestAPIRunExhaustedRetriesStillReturns200WithSteps(t *testing.T) {
 	c, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Retries: 1, RetryDelay: 0, Enabled: true},
-	}}, "/usr/bin/false")
+	}}, &memRunStore{}, "/usr/bin/false")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestAPIRunExhaustedRetriesStillReturns200WithSteps(t *testing.T) {
 func TestAPIRunStartupFailureReturns500(t *testing.T) {
 	c, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
-	}}, "/nonexistent/curl")
+	}}, &memRunStore{}, "/nonexistent/curl")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestAPIRunManualLogsBlockOnSuccess(t *testing.T) {
 
 	c, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Name: "ping", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
-	}}, "/usr/bin/true")
+	}}, &memRunStore{}, "/usr/bin/true")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestAPIRunManualLogsBlockOnFailure(t *testing.T) {
 
 	c, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Retries: 1, RetryDelay: 0, Enabled: true},
-	}}, "/usr/bin/false")
+	}}, &memRunStore{}, "/usr/bin/false")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}

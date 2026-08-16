@@ -16,7 +16,7 @@ func withCLIServer(t *testing.T, h http.Handler) string {
 }
 
 func TestRunCLC_listAndAddFlow(t *testing.T) {
-	c, err := NewController(&memStore{}, "/bin/true")
+	c, err := NewController(&memStore{}, &memRunStore{}, "/bin/true")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestRunCLIMissingArgs(t *testing.T) {
 }
 
 func TestRunCLIBadTokenExit2(t *testing.T) {
-	c, err := NewController(&memStore{}, "/bin/true")
+	c, err := NewController(&memStore{}, &memRunStore{}, "/bin/true")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestRunCLIUsageListsFlagsBeforeID(t *testing.T) {
 func TestRunCLIRunPrintsBlock(t *testing.T) {
 	c, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Name: "ping", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
-	}}, "/usr/bin/true")
+	}}, &memRunStore{}, "/usr/bin/true")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestRunCLIRunPrintsBlock(t *testing.T) {
 func TestRunCLIRunFailedPrintsFailedBlock(t *testing.T) {
 	c, err := NewController(&memStore{jobs: []Job{
 		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
-	}}, "/usr/bin/false")
+	}}, &memRunStore{}, "/usr/bin/false")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}

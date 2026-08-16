@@ -10,7 +10,7 @@ import (
 
 func spaServer(t *testing.T) http.Handler {
 	t.Helper()
-	c, err := NewController(&memStore{}, "/bin/true")
+	c, err := NewController(&memStore{}, &memRunStore{}, "/bin/true")
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}

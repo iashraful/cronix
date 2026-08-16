@@ -22,6 +22,8 @@ var (
 
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
+const runHistoryCap = 50
+
 func wrapValidation(format string, a ...any) error {
 	return fmt.Errorf("%w: %s", ErrValidation, fmt.Sprintf(format, a...))
 }
@@ -30,19 +32,23 @@ type Controller struct {
 	mu       sync.Mutex
 	runMu    sync.Mutex
 	store    Store
+	runStore RunStore
 	cron     *cron.Cron
 	jobs     map[string]Job
 	order    []string
 	entries  map[string]cron.EntryID
+	runs     map[string][]Run
 	curlPath string
 }
 
-func NewController(store Store, curlPath string) (*Controller, error) {
+func NewController(store Store, runStore RunStore, curlPath string) (*Controller, error) {
 	c := &Controller{
 		store:    store,
+		runStore: runStore,
 		cron:     cron.New(),
 		jobs:     map[string]Job{},
 		entries:  map[string]cron.EntryID{},
+		runs:     map[string][]Run{},
 		curlPath: curlPath,
 	}
 	stored, err := store.Load()
@@ -58,6 +64,16 @@ func NewController(store Store, curlPath string) (*Controller, error) {
 		if err := c.register(job); err != nil {
 			return nil, fmt.Errorf("job %q: %w", job.Id, err)
 		}
+	}
+	loadedRuns, err := runStore.LoadRuns()
+	if err != nil {
+		return nil, fmt.Errorf("load run store: %w", err)
+	}
+	for _, r := range loadedRuns {
+		if _, ok := c.jobs[r.JobId]; !ok {
+			continue // prune orphaned runs for jobs that no longer exist
+		}
+		c.runs[r.JobId] = append(c.runs[r.JobId], r)
 	}
 	return c, nil
 }
@@ -183,12 +199,78 @@ func (c *Controller) Delete(id string) error {
 		}
 		return err
 	}
+	delete(c.runs, id)
+	if err := c.runStore.SaveRuns(c.runsSnapshot()); err != nil {
+		log.Printf("run history save: %v", err)
+	}
 	log.Printf("job=%s deleted", id)
 	return nil
 }
 
 func (c *Controller) Enable(id string) error  { return c.setEnabled(id, true) }
 func (c *Controller) Disable(id string) error { return c.setEnabled(id, false) }
+
+func (c *Controller) recordRun(job Job, trigger string, results []Result, runErr error) {
+	status := "ok"
+	switch {
+	case runErr == nil:
+	case errors.Is(runErr, ErrCommandFailed):
+		status = "failed"
+	default:
+		status = "error"
+	}
+	exit := 0
+	if n := len(results); n > 0 {
+		exit = results[n-1].ExitCode
+	}
+	run := Run{
+		JobId:    job.Id,
+		Trigger:  trigger,
+		Time:     time.Now().UTC(),
+		Status:   status,
+		ExitCode: exit,
+		Results:  results,
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.runs[job.Id] = append([]Run{run}, c.runs[job.Id]...)
+	if len(c.runs[job.Id]) > runHistoryCap {
+		c.runs[job.Id] = c.runs[job.Id][:runHistoryCap]
+	}
+	if err := c.runStore.SaveRuns(c.runsSnapshot()); err != nil {
+		log.Printf("run history save: %v", err)
+	}
+}
+
+func (c *Controller) History(id string) ([]Run, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.jobs[id]; !ok {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	out := make([]Run, len(c.runs[id]))
+	copy(out, c.runs[id])
+	return out, nil
+}
+
+func (c *Controller) LastRun(id string) *RunSummary {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	runs := c.runs[id]
+	if len(runs) == 0 {
+		return nil
+	}
+	first := runs[0]
+	return &RunSummary{Status: first.Status, ExitCode: first.ExitCode, Time: first.Time}
+}
+
+func (c *Controller) runsSnapshot() []Run {
+	out := make([]Run, 0, len(c.order))
+	for _, id := range c.order {
+		out = append(out, c.runs[id]...)
+	}
+	return out
+}
 
 func (c *Controller) setEnabled(id string, enabled bool) error {
 	c.mu.Lock()
@@ -232,7 +314,9 @@ func (c *Controller) Run(id string) ([]Result, error) {
 	}
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
-	return runJob(job, c.curlPath)
+	results, err := runJob(job, c.curlPath)
+	c.recordRun(job, "manual", results, err)
+	return results, err
 }
 
 func (c *Controller) validate(j Job) error {
@@ -316,6 +400,7 @@ func (c *Controller) fire(id string) {
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
 	results, err := runJob(job, c.curlPath)
+	c.recordRun(job, "scheduled", results, err)
 	if err != nil {
 		log.Printf("%s", formatRun(job, results, err))
 		return

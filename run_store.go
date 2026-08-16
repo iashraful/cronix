@@ -16,6 +16,12 @@ type Run struct {
 	Results  []Result  `json:"results"`
 }
 
+type RunSummary struct {
+	Status   string    `json:"status"`
+	ExitCode int       `json:"exit_code"`
+	Time     time.Time `json:"time"`
+}
+
 type RunStore interface {
 	LoadRuns() ([]Run, error)
 	SaveRuns([]Run) error
