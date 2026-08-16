@@ -64,6 +64,11 @@ type RunStore interface {
 #### Controller ledger
 
 - New field `runs map[string][]Run` (by job id), newest-first.
+- **Concurrency**: the `runs` map is guarded by the existing `mu` (as with the
+  `jobs` map). `recordRun` and `Delete` acquire `mu` briefly to mutate/persist;
+  `Run`/`fire` keep holding `runMu` during the actual run, then call
+  `recordRun`, which locks `mu`. Deadlock-free: `runMu` is never held while
+  waiting on `mu` in the reverse order (jobs mutations only take `mu`).
 - `recordRun(job, trigger, results, err)`:
   - derives `Status` (`err == nil` → `ok`; `errors.Is(err, ErrCommandFailed)` →
     `failed`; else `error`) and `ExitCode` (last result's exit, `0` when none);
