@@ -70,7 +70,7 @@ func TestParseCommandRejectsEmpty(t *testing.T) {
 func TestRunPassesArgs(t *testing.T) {
 	curlPath, logPath := fakeCurl(t, 1)
 	job := Job{Id: "j0", Schedule: "* * * * *", Curl: `curl -H "X-Test: abc" -d "hello world" http://example.com`, Retries: 0}
-	_, err := Run(job, curlPath)
+	_, err := runJob(job, curlPath)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestRunPassesArgs(t *testing.T) {
 func TestRunSucceedsFirstAttempt(t *testing.T) {
 	curlPath, _ := fakeCurl(t, 1)
 	job := Job{Id: "j0", Schedule: "* * * * *", Curl: "curl http://example.com", Retries: 3}
-	results, err := Run(job, curlPath)
+	results, err := runJob(job, curlPath)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestRunSucceedsFirstAttempt(t *testing.T) {
 func TestRunRetriesUntilSuccess(t *testing.T) {
 	curlPath, _ := fakeCurl(t, 2)
 	job := Job{Id: "j0", Schedule: "* * * * *", Curl: "curl http://example.com", Retries: 5, RetryDelay: 0}
-	results, err := Run(job, curlPath)
+	results, err := runJob(job, curlPath)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestRunRetriesUntilSuccess(t *testing.T) {
 func TestRunGivesUpAfterExhaustion(t *testing.T) {
 	curlPath, _ := fakeCurl(t, 99)
 	job := Job{Id: "j0", Schedule: "* * * * *", Curl: "curl http://example.com", Retries: 2, RetryDelay: 0}
-	results, err := Run(job, curlPath)
+	results, err := runJob(job, curlPath)
 	if err == nil {
 		t.Fatal("want error after retries exhausted")
 	}
@@ -136,7 +136,7 @@ func TestRunTruncatesOutput(t *testing.T) {
 		t.Fatalf("write fake curl: %v", err)
 	}
 	job := Job{Id: "j0", Schedule: "* * * * *", Curl: "curl http://example.com", Retries: 0}
-	results, err := Run(job, path)
+	results, err := runJob(job, path)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestRunTruncatesOutput(t *testing.T) {
 
 func TestRunCannotStartBinary(t *testing.T) {
 	job := Job{Id: "j0", Schedule: "* * * * *", Curl: "curl http://example.com", Retries: 0}
-	_, err := Run(job, filepath.Join(t.TempDir(), "does-not-exist"))
+	_, err := runJob(job, filepath.Join(t.TempDir(), "does-not-exist"))
 	if err == nil {
 		t.Fatal("want error when curl binary missing")
 	}
@@ -160,7 +160,7 @@ func TestRunHonorsRetryDelay(t *testing.T) {
 	curlPath, _ := fakeCurl(t, 2)
 	start := time.Now()
 	job := Job{Id: "j0", Schedule: "* * * * *", Curl: "curl http://example.com", Retries: 1, RetryDelay: 1}
-	results, err := Run(job, curlPath)
+	results, err := runJob(job, curlPath)
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}

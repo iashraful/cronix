@@ -232,7 +232,7 @@ func (c *Controller) Run(id string) ([]Result, error) {
 	}
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
-	return Run(job, c.curlPath)
+	return runJob(job, c.curlPath)
 }
 
 func (c *Controller) validate(j Job) error {
@@ -315,7 +315,7 @@ func (c *Controller) fire(id string) {
 	}
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
-	results, err := Run(job, c.curlPath)
+	results, err := runJob(job, c.curlPath)
 	if err != nil {
 		log.Printf("%s", formatRun(job, results, err))
 		return

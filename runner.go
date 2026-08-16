@@ -45,7 +45,7 @@ func tail(b []byte, max int) string {
 	return string(b[len(b)-max:])
 }
 
-func Run(job Job, curlPath string) ([]Result, error) {
+func runJob(job Job, curlPath string) ([]Result, error) {
 	args, err := ParseCommand(job.Curl)
 	if err != nil {
 		return nil, err

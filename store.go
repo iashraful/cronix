@@ -51,11 +51,15 @@ func (f *FileStore) Save(jobs []Job) error {
 		return err
 	}
 	data = append(data, '\n')
-	dir := filepath.Dir(f.Path)
+	return atomicWriteFile("jobs-*.tmp", f.Path, data)
+}
+
+func atomicWriteFile(pattern, path string, data []byte) error {
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "jobs-*.tmp")
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		return err
 	}
@@ -71,5 +75,5 @@ func (f *FileStore) Save(jobs []Job) error {
 	if err := os.Chmod(tmpName, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, f.Path)
+	return os.Rename(tmpName, path)
 }
