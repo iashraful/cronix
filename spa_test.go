@@ -29,15 +29,18 @@ func TestSpaServesIndex(t *testing.T) {
 	}
 }
 
-func TestSpaServesAppJS(t *testing.T) {
+func TestSpaServesReactIndex(t *testing.T) {
 	h := spaServer(t)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "/app.js", nil))
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
 	}
 	b, _ := io.ReadAll(w.Result().Body)
-	if !strings.Contains(string(b), "fetch") {
-		t.Error("app.js should contain fetch API calls")
+	if !strings.Contains(string(b), `<div id="root">`) {
+		t.Error("built index should contain the React mount node")
+	}
+	if !strings.Contains(string(b), "/assets/") {
+		t.Error("built index should reference Vite asset bundles")
 	}
 }
