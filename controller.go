@@ -321,8 +321,8 @@ func (c *Controller) fire(id string) {
 		return
 	}
 	for _, r := range results {
-		log.Printf("job=%s schedule=%q attempt=%d/%d exit=%d output=%s",
-			job.Id, job.Schedule, r.Attempt, r.Total, r.ExitCode, strings.TrimSpace(r.Output))
+		log.Printf("job=%s name=%s schedule=%q attempt=%d/%d exit=%d output=%s",
+			job.Id, job.Name, job.Schedule, r.Attempt, r.Total, r.ExitCode, strings.TrimSpace(r.Output))
 	}
 }
 
