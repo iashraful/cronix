@@ -628,7 +628,7 @@ func (c *Controller) Run(id string) ([]Result, error) {
 	}
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
-	results, err := Run(job, c.curlPath)
+	results, err := runJob(job, c.curlPath)
 	c.recordRun(job, "manual", results, err)
 	return results, err
 }
@@ -639,7 +639,7 @@ func (c *Controller) Run(id string) ([]Result, error) {
 ```go
 	c.runMu.Lock()
 	defer c.runMu.Unlock()
-	results, err := Run(job, c.curlPath)
+	results, err := runJob(job, c.curlPath)
 	c.recordRun(job, "scheduled", results, err)
 	if err != nil {
 ```
