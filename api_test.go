@@ -251,7 +251,119 @@ func TestAPIRunManualLogsBlockOnFailure(t *testing.T) {
 		t.Fatalf("run with exhausted retries: want 200, got %d: %s", w.Code, b)
 	}
 	got := logs.String()
-	if !strings.Contains(got, "result: FAILED") || !strings.Contains(got, "2/2 attempts") {
+	if !strings.Contains(got, "run job=a") || !strings.Contains(got, "result: FAILED") || !strings.Contains(got, "2/2 attempts") {
 		t.Errorf("manual run failure should log the block with FAILED:\n%s", got)
+	}
+}
+
+func TestAPIRunsEndpoint(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, &memRunStore{}, "/usr/bin/true")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, "secret")
+	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("run: %d: %s", w.Code, b)
+	}
+	w, b = req(t, h, "GET", "/api/v1/jobs/a/runs", "secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("runs: want 200, got %d: %s", w.Code, b)
+	}
+	var resp struct {
+		Runs []Run `json:"runs"`
+	}
+	if err := json.Unmarshal(b, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Runs) != 1 || resp.Runs[0].Status != "ok" || resp.Runs[0].Trigger != "manual" {
+		t.Errorf("runs payload wrong: %+v", resp.Runs)
+	}
+}
+
+func TestAPIRunsMissingJobReturns404(t *testing.T) {
+	h := newTestServer(t, &memStore{})
+	w, _ := req(t, h, "GET", "/api/v1/jobs/nope/runs", "secret", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
+}
+
+func TestAPIListIncludesLastRunSummary(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl true", Enabled: true},
+		{Id: "b", Schedule: "* * * * *", Curl: "curl true", Enabled: true},
+	}}, &memRunStore{}, "/usr/bin/env")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, "secret")
+	if w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil); w.Code != http.StatusOK {
+		t.Fatalf("run: %d: %s", w.Code, b)
+	}
+	w, b := req(t, h, "GET", "/api/v1/jobs", "secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list: %d", w.Code)
+	}
+	var jobs []jobResponse
+	if err := json.Unmarshal(b, &jobs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("want 2 jobs, got %d", len(jobs))
+	}
+	var withLast, withoutLast *jobResponse
+	for i := range jobs {
+		if jobs[i].Id == "a" {
+			withLast = &jobs[i]
+		} else {
+			withoutLast = &jobs[i]
+		}
+	}
+	if withLast == nil || withLast.LastRun == nil || withLast.LastRun.Status != "ok" {
+		t.Errorf("job a should carry a last_run summary: %+v", withLast)
+	}
+	if withoutLast == nil || withoutLast.LastRun != nil {
+		t.Errorf("job b should have no last_run yet: %+v", withoutLast)
+	}
+}
+
+func TestAPIGetIncludesLastRunSummary(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, &memRunStore{}, "/usr/bin/true")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, "secret")
+	w, b := req(t, h, "GET", "/api/v1/jobs/a", "secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get: %d", w.Code)
+	}
+	var j jobResponse
+	if err := json.Unmarshal(b, &j); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if j.Id != "a" || j.LastRun != nil {
+		t.Errorf("get without history: %+v", j)
+	}
+}
+
+func TestCLIListStillDecodesJobResponse(t *testing.T) {
+	c, err := NewController(&memStore{jobs: []Job{
+		{Id: "a", Name: "ping", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+	}}, &memRunStore{}, "/usr/bin/true")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	addr := withCLIServer(t, NewServer(c, "tok"))
+	out := new(bytes.Buffer)
+	if code := runCLIIn([]string{"list", "--addr", addr, "--token", "tok"}, out); code != 0 {
+		t.Fatalf("list: exit %d: %s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "ping") {
+		t.Errorf("list output broken by last_run field: %s", out.String())
 	}
 }

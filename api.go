@@ -62,6 +62,7 @@ func NewServer(ctrl *Controller, token string) http.Handler {
 	mux.HandleFunc("PUT /api/v1/jobs/{id}", s.auth(s.handleUpdate))
 	mux.HandleFunc("DELETE /api/v1/jobs/{id}", s.auth(s.handleDelete))
 	mux.HandleFunc("POST /api/v1/jobs/{id}/run", s.auth(s.handleRun))
+	mux.HandleFunc("GET /api/v1/jobs/{id}/runs", s.auth(s.handleRuns))
 	mux.Handle("GET /", SPAHandler())
 	return mux
 }
@@ -83,8 +84,18 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+type jobResponse struct {
+	Job
+	LastRun *RunSummary `json:"last_run,omitempty"`
+}
+
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.ctrl.List())
+	jobs := s.ctrl.List()
+	out := make([]jobResponse, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, jobResponse{Job: j, LastRun: s.ctrl.LastRun(j.Id)})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -102,12 +113,13 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
-	job, err := s.ctrl.Get(r.PathValue("id"))
+	id := r.PathValue("id")
+	job, err := s.ctrl.Get(id)
 	if err != nil {
 		writeCtrlError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, job)
+	writeJSON(w, http.StatusOK, jobResponse{Job: job, LastRun: s.ctrl.LastRun(id)})
 }
 
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +160,17 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, struct {
 		Steps []Result `json:"steps"`
 	}{Steps: results})
+}
+
+func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
+	runs, err := s.ctrl.History(r.PathValue("id"))
+	if err != nil {
+		writeCtrlError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Runs []Run `json:"runs"`
+	}{Runs: runs})
 }
 
 func writeCtrlError(w http.ResponseWriter, err error) {
