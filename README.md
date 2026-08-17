@@ -7,6 +7,14 @@ TLS) to make an API call: no shell, no OS packages, no heavy runtimes. The
 runtime image is built on `scratch` and contains exactly three things: the
 Cronix binary, a statically-built `curl`, and a CA bundle.
 
+## Project layout
+
+The Go code lives under `cmd/` and `internal/`: `cmd/cronix` holds the
+`main` package (entrypoint), and `internal/*` holds the packages it uses
+(API, CLI, controller, store, runner, auth, SPA embed, ...). The UI source
+lives under `ui/` (React + Vite) and builds into `internal/spa/dist/`,
+which `go:embed` packs into the binary.
+
 ## Modes
 
 The image's entrypoint is `/cronix`. It runs in one of two modes:
@@ -402,7 +410,8 @@ stores a signed session token in session storage and uses it for the REST API.
   shell for any path that is not a real asset or API route.
 
 The UI is a small static single-page app embedded into the binary via
-`go:embed` (in `spa.go`, serving the built `dist/` directory).
+`go:embed` (in `internal/spa/spa.go`, serving the built
+`internal/spa/dist/` directory).
 
 ## Environment Variables
 

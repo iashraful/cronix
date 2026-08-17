@@ -5,7 +5,6 @@ Dockerfile
 ui/node_modules
 .superpowers
 .data
-dist
+internal/spa/dist
 web
 bin
-internal/spa/dist

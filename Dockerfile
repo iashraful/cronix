@@ -34,8 +34,8 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=web /dist ./dist
-RUN CGO_ENABLED=0 go build -o /cronix .
+COPY --from=web /internal/spa/dist ./internal/spa/dist
+RUN CGO_ENABLED=0 go build -o /cronix ./cmd/cronix
 
 FROM scratch
 

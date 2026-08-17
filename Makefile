@@ -29,7 +29,7 @@ help:
 	@echo "  clean          remove build artifacts and local data"
 
 build: ui
-	go build -o bin/$(BINARY) .
+	go build -o bin/$(BINARY) ./cmd/cronix
 
 test: ui
 	go test ./...
