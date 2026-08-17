@@ -20,3 +20,17 @@ export function filterJobs(jobs, query) {
     [j.id, j.name, j.schedule].some((v) => (v || '').toLowerCase().includes(needle)),
   )
 }
+
+export function summarizeJobs(jobs) {
+  const list = Array.isArray(jobs) ? jobs : []
+  let enabled = 0
+  let healthy = 0
+  let failing = 0
+  for (const j of list) {
+    if (j.enabled) enabled++
+    const status = j.last_run && j.last_run.status
+    if (status === 'ok') healthy++
+    else if (status === 'failed' || status === 'error') failing++
+  }
+  return { total: list.length, enabled, healthy, failing }
+}

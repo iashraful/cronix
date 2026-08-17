@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterJobs, relativeTime } from './lib'
+import { filterJobs, relativeTime, summarizeJobs } from './lib'
 
 describe('relativeTime', () => {
   it('returns empty for missing input', () => {
@@ -32,5 +32,34 @@ describe('filterJobs', () => {
     expect(filterJobs(jobs, 'ABC')).toHaveLength(1)
     expect(filterJobs(jobs, '9')).toHaveLength(1)
     expect(filterJobs(jobs, 'zzz')).toHaveLength(0)
+  })
+})
+
+describe('summarizeJobs', () => {
+  it('returns zeroed stats for empty input', () => {
+    expect(summarizeJobs([])).toEqual({ total: 0, enabled: 0, healthy: 0, failing: 0 })
+  })
+
+  it('counts total and enabled', () => {
+    const jobs = [
+      { id: 'a', enabled: true },
+      { id: 'b', enabled: false },
+      { id: 'c', enabled: true },
+    ]
+    expect(summarizeJobs(jobs)).toEqual({ total: 3, enabled: 2, healthy: 0, failing: 0 })
+  })
+
+  it('classifies healthy as ok and failing as failed/error regardless of enabled', () => {
+    const jobs = [
+      { id: 'a', enabled: true, last_run: { status: 'ok' } },
+      { id: 'b', enabled: false, last_run: { status: 'failed' } },
+      { id: 'c', enabled: true, last_run: { status: 'error' } },
+      { id: 'd', enabled: false, last_run: null },
+    ]
+    expect(summarizeJobs(jobs)).toEqual({ total: 4, enabled: 2, healthy: 1, failing: 2 })
+  })
+
+  it('tolerates jobs that lack last_run entirely', () => {
+    expect(summarizeJobs([{ id: 'x', enabled: true }])).toEqual({ total: 1, enabled: 1, healthy: 0, failing: 0 })
   })
 })
