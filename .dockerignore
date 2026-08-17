@@ -3,3 +3,5 @@ docs
 Dockerfile
 .dockerignore
 ui/node_modules
+.superpowers
+.data
