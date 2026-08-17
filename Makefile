@@ -17,7 +17,7 @@ help:
 	@echo "  test           run all Go tests"
 	@echo "  vet            run go vet"
 	@echo "  lint           check gofmt"
-	@echo "  ui              build the React UI into dist/ (npm ci + vite build)"
+	@echo "  ui              build the React UI into internal/spa/dist/ (npm ci + vite build)"
 	@echo "  run            run the server locally (token: $$CRONIX_API_TOKEN or $(TOKEN))"
 	@echo "  docker-build   build the Docker image"
 	@echo "  docker-run     start the container (volume $(DATA_DIR), port $(PORT))"
@@ -50,7 +50,7 @@ run: ui
 	CRONIX_USERNAME=$${CRONIX_USERNAME:-admin} \
 	CRONIX_PASSWORD=$${CRONIX_PASSWORD:-admin} \
 	CRONIX_STORE_PATH=$(STORE) \
-	go run .
+	go run ./cmd/cronix
 
 docker-build:
 	docker build -t $(IMAGE) .
