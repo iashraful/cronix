@@ -2,7 +2,7 @@
 
 A cron-style scheduler for HTTP jobs that runs in a Docker container. Jobs are
 managed at runtime — through a CLI, a REST API, or a small web UI — and persist
-to a JSON file. Every job shells out to a statically-linked `curl` binary (with
+to JSON files. Every job shells out to a statically-linked `curl` binary (with
 TLS) to make an API call: no shell, no OS packages, no heavy runtimes. The
 runtime image is built on `scratch` and contains exactly three things: the
 Cronix binary, a statically-built `curl`, and a CA bundle.
@@ -23,6 +23,8 @@ The image's entrypoint is `/cronix`. It runs in one of two modes:
 mkdir -p /tmp/cronix-data
 docker run --rm -d --name cronix \
   -e CRONIX_API_TOKEN=sekrit \
+  -e CRONIX_USERNAME=admin \
+  -e CRONIX_PASSWORD=admin \
   -v /tmp/cronix-data:/data \
   -p 8080:8080 \
   cronix
@@ -35,24 +37,82 @@ docker exec cronix /cronix cli list --token sekrit
 On the first start the server logs that no jobs are configured; add one with
 `/cronix cli add` or the web UI at `http://localhost:8080`.
 
-## Environment Variables
+## Jobs
 
-| Variable | Default | Notes |
+A job is a JSON object stored in the jobs file. This is the full model:
+
+```json
+{
+  "id": "3f8a1c2b0d4e",
+  "name": "ping",
+  "schedule": "* * * * *",
+  "curl": "curl -s https://example.com",
+  "retries": 0,
+  "retry_delay": 5,
+  "enabled": true
+}
+```
+
+| Field | Type | Meaning |
 |---|---|---|
-| `CRONIX_API_TOKEN` | — | **Required.** Bearer token for the REST API and web UI. The server refuses to start without it. |
-| `CRONIX_USERNAME` | `admin` | Username for the web UI login. |
-| `CRONIX_PASSWORD` | `admin` | Password for the web UI login. |
-| `CRONIX_SESSION_TTL` | `24h` | Lifetime of a web session token. Unparseable values silently fall back to the default. |
-| `CRONIX_STORE_PATH` | `/data/jobs.json` | Path to the JSON store. The directory is created if missing. |
-| `CRONIX_RUNS_PATH` | `/data/runs.json` | Path to the run-history store. Keeps the last 50 runs per job. |
-| `CRONIX_HTTP_ADDR` | `:8080` | Address the HTTP server listens on. |
-| `CURL_PATH` | `/usr/local/bin/curl` | Path to the `curl` binary used to run jobs. |
-| `TZ` | container local time | Timezone the cron scheduler uses. Set e.g. `TZ=America/New_York` (see below). |
+| `id` | string | Unique identifier. Must match `[A-Za-z0-9_-]{1,128}`; generated randomly if omitted. |
+| `name` | string | Human-readable label (optional). |
+| `schedule` | string | Standard 5-field cron expression (see [Cron Schedules](#cron-schedules)). |
+| `curl` | string | The `curl` command to run. Must start with `curl` (see [Curl Commands](#curl-commands)). |
+| `retries` | int | Extra attempts on failure (default `0`). Must be `>= 0`. |
+| `retry_delay` | int | Seconds to wait between attempts (default `5`). Must be `>= 0`. |
+| `enabled` | bool | Whether the job is scheduled (default `true`). |
 
-### Timezone
+`retries` and `retry_delay` are validated on create and update. An invalid
+`schedule`, a `curl` command that does not start with `curl`, or a bad `id` is
+rejected with a `400`.
 
-Schedules are evaluated in the container's local time, so set `TZ` to match your
-schedules:
+### JSON Store
+
+Jobs are persisted as a JSON array at `CRONIX_STORE_PATH`
+(`/data/jobs.json` by default) and run history at `CRONIX_RUNS_PATH`
+(`/data/runs.json`). Both are written atomically (temp file + rename) on every
+change, so a crash mid-write never corrupts the store.
+
+Use a volume so the data survives container restarts:
+
+```sh
+docker run --rm -d --name cronix \
+  -e CRONIX_API_TOKEN=sekrit \
+  -v my-cronix-data:/data \
+  -p 8080:8080 \
+  cronix
+```
+
+### Cron Schedules
+
+Schedules are standard 5-field cron expressions, evaluated in the container's
+local time:
+
+```
+minute hour day-of-month month day-of-week
+```
+
+| Field | Allowed values |
+|---|---|
+| minute | `0-59` |
+| hour | `0-23` |
+| day-of-month | `1-31` |
+| month | `1-12` or `JAN-DEC` |
+| day-of-week | `0-6` or `SUN-SAT` |
+
+Supported syntax: ranges (`1-5`), lists (`1,3,5`), steps (`*/5`, `10-30/5`),
+and names for months and weekdays. Examples:
+
+| Expression | Meaning |
+|---|---|
+| `* * * * *` | Every minute |
+| `*/5 * * * *` | Every 5 minutes |
+| `0 9 * * *` | Daily at 09:00 |
+| `0 0 * * 1-5` | Weekdays at midnight |
+| `30 2 1 * *` | First of every month at 02:30 |
+
+Set `TZ` to match your schedules:
 
 ```sh
 docker run --rm -d --name cronix \
@@ -63,52 +123,57 @@ docker run --rm -d --name cronix \
   cronix
 ```
 
-### Migration note: `CRON_*` is gone
+### Curl Commands
 
-Cronix v1 configured jobs through `CRON_SCHEDULE_<i>` / `CRON_CURL_<i>` env
-variables. These **no longer exist**. Jobs are now first-class objects stored at
-`CRONIX_STORE_PATH` and managed via the CLI, REST API, or web UI. To migrate, add
-each env-configured job once with `/cronix cli add` (or the API) and mount the
-store volume for persistence.
+Each job runs one `curl` command. The command **must begin with `curl`**
+followed by options; anything else is rejected on create/update.
 
-## JSON Store
+- Arguments are parsed like a POSIX shell would: single quotes, double quotes,
+  and backslash escapes are honored (e.g. quoted JSON bodies with spaces work).
+- There is **no shell** involved: no `&&`, pipes, variable expansion (`$VAR`),
+  redirects, or globs inside commands. Cronix tokenizes the string with
+  `shlex` and `exec`s `curl` with the resulting arguments.
+- `CURL_CA_BUNDLE` is preset so HTTPS certificate verification works out of
+  the box.
 
-Jobs are persisted as a JSON array at `CRONIX_STORE_PATH`
-(`/data/jobs.json` by default):
-
-```json
-[
-  {
-    "id": "3f8a1c2b0d4e",
-    "name": "ping",
-    "schedule": "* * * * *",
-    "curl": "curl -s https://example.com",
-    "retries": 0,
-    "retry_delay": 5,
-    "enabled": true
-  }
-]
-```
-
-| Field | Type | Meaning |
-|---|---|---|
-| `id` | string | Unique identifier (`[A-Za-z0-9_-]{1,128}`); generated if omitted. |
-| `name` | string | Human-readable label. |
-| `schedule` | string | Standard 5-field cron expression. |
-| `curl` | string | The `curl` command to run. Must start with `curl`. |
-| `retries` | int | Extra attempts on failure (default `0`). |
-| `retry_delay` | int | Seconds between retries (default `5`). |
-| `enabled` | bool | Whether the job is scheduled (default `true`). |
-
-Use a volume so the store survives container restarts:
+Examples:
 
 ```sh
-docker run --rm -d --name cronix \
-  -e CRONIX_API_TOKEN=sekrit \
-  -v my-cronix-data:/data \
-  -p 8080:8080 \
-  cronix
+# simple GET
+curl -s https://example.com
+
+# POST JSON (note the single-quoted body)
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"name":"Alice"}' https://api.example.com/users
 ```
+
+### Retries and Run History
+
+Each run makes `retries + 1` attempts. If an attempt exits non-zero, Cronix
+waits `retry_delay` seconds and tries again, up to `retries` extra attempts;
+the first attempt that exits `0` stops the run. Each attempt's combined
+stdout+stderr is captured and capped at the last 4 KiB of output.
+
+Every run — scheduled or manual — is recorded in the run history, newest
+first, capped at the last **50 runs per job**. A run record looks like:
+
+```json
+{
+  "job_id": "3f8a1c2b0d4e",
+  "trigger": "scheduled",
+  "time": "2026-08-17T12:34:56Z",
+  "status": "failed",
+  "exit_code": 6,
+  "results": [
+    {"attempt": 1, "total": 2, "exit": 6, "output": "curl: (6) Could not resolve host"},
+    {"attempt": 2, "total": 2, "exit": 6, "output": "curl: (6) Could not resolve host"}
+  ]
+}
+```
+
+`trigger` is `scheduled` or `manual`; `status` is `ok`, `failed` (command ran
+but exited non-zero after all attempts), or `error` (the command could not be
+started). Deleting a job also deletes its run history.
 
 ## CLI
 
@@ -118,28 +183,27 @@ Flags must precede the positional `<id>`: Go's `flag` package stops parsing at
 the first non-flag argument, so `/cronix cli get --token sekrit <id>` works but
 `/cronix cli get <id> --token sekrit` is a usage error.
 
-Common flags:
+Run it from your host with `docker exec <container> /cronix cli ...`.
+
+### Common flags
 
 | Flag | Default | Notes |
 |---|---|---|
 | `--addr` | `http://127.0.0.1:8080` | API base URL. |
 | `--token` | `$CRONIX_API_TOKEN` | API bearer token. |
 
-Run it from your host with `docker exec <container> /cronix cli ...`, e.g.
-`docker exec cronix /cronix cli list --token sekrit`.
-
 ### Commands
 
 | Command | Description |
 |---|---|
-| `list [--addr URL] [--token TOKEN]` | List jobs as a table. |
-| `get [--addr URL] [--token TOKEN] <id>` | Show one job as JSON. |
-| `add [flags]` | Create a job; prints `created <id>`. |
-| `update [flags] <id>` | Replace a job (partial: only flags you set change). |
-| `delete [--addr URL] [--token TOKEN] <id>` | Delete a job; prints `deleted <id>`. |
-| `enable [--addr URL] [--token TOKEN] <id>` | Resume a disabled job. |
-| `disable [--addr URL] [--token TOKEN] <id>` | Pause a job (stops firing). |
-| `run [--addr URL] [--token TOKEN] <id>` | Run a job now; prints one line per attempt. |
+| `list` | List jobs as a table. |
+| `get <id>` | Show one job as JSON (includes `last_run` summary). |
+| `add` | Create a job; prints `created <id>`. |
+| `update <id>` | Replace a job (partial: only flags you set change). |
+| `delete <id>` | Delete a job; prints `deleted <id>`. |
+| `enable <id>` | Resume a disabled job. |
+| `disable <id>` | Pause a job (stops firing). |
+| `run <id>` | Run a job now; prints one line per attempt. |
 | `help` | Print usage. |
 
 `add`/`update` flags:
@@ -153,6 +217,49 @@ Run it from your host with `docker exec <container> /cronix cli ...`, e.g.
 | `--retries` | Extra attempts on failure (default `0`). |
 | `--retry-delay` | Seconds between retries (default `5`). |
 | `--enabled` | Enabled flag (default `true`). |
+
+### Examples
+
+```sh
+# list all jobs
+docker exec cronix /cronix cli list --token sekrit
+
+# add a job that runs every 5 minutes
+docker exec cronix /cronix cli add \
+  --name healthcheck \
+  --schedule '*/5 * * * *' \
+  --curl 'curl -s https://example.com/health' \
+  --retries 2 --retry-delay 10 \
+  --token sekrit
+# → created <id>
+
+# add a job with an explicit id
+docker exec cronix /cronix cli add --id ping1 --name ping \
+  --schedule '* * * * *' --curl 'curl -s https://example.com' --token sekrit
+
+# get one job
+docker exec cronix /cronix cli get --token sekrit ping1
+
+# update only the schedule (other fields preserved)
+docker exec cronix /cronix cli update --schedule '0 9 * * *' --token sekrit ping1
+
+# pause and resume
+docker exec cronix /cronix cli disable --token sekrit ping1
+docker exec cronix /cronix cli enable --token sekrit ping1
+
+# run now and see the attempts
+docker exec cronix /cronix cli run --token sekrit ping1
+# → run job=ping1 name=ping schedule="0 9 * * *" command="curl -s https://example.com"
+#     attempt 1/1 exit=0
+#       output: (no output)
+#     result: OK
+
+# delete
+docker exec cronix /cronix cli delete --token sekrit ping1
+```
+
+`cli run` always exits `0` when the API call itself succeeds, even if the job's
+command failed — the failure is shown in the output (`result: FAILED`).
 
 ### Exit codes
 
@@ -168,21 +275,27 @@ Run it from your host with `docker exec <container> /cronix cli ...`, e.g.
 `Authorization: Bearer <token>` (constant-time compared); otherwise `401`. The
 token is either the static `CRONIX_API_TOKEN` or a session token from
 `POST /api/v1/login`.
-Errors return `{"error": "..."}` with status `400` (validation), `404`
-(not found), or `500` (storage/other).
+Errors return `{"error": "..."}` with status `401` (bad/missing credentials),
+`400` (validation), `404` (not found), or `500` (storage/other).
+
+### Endpoints
 
 | Method & Path | Description | Success |
 |---|---|---|
 | `POST /api/v1/login` | Log in with the configured username/password; returns a session token. | `200` `{"token":"..."}` |
-| `GET /api/v1/jobs` | List all jobs. | `200` JSON array |
+| `GET /api/v1/jobs` | List all jobs (each includes `last_run` summary). | `200` JSON array |
 | `POST /api/v1/jobs` | Create a job. | `201` created job |
-| `GET /api/v1/jobs/{id}` | Get one job. | `200` job |
+| `GET /api/v1/jobs/{id}` | Get one job (includes `last_run`). | `200` job |
 | `PUT /api/v1/jobs/{id}` | Replace a job (full body). | `200` updated job |
 | `DELETE /api/v1/jobs/{id}` | Delete a job. | `204` empty |
 | `GET /api/v1/jobs/{id}/runs` | List a job's run history, newest first (capped at 50). | `200` `{"runs":[{...}]}` |
 | `POST /api/v1/jobs/{id}/run` | Run a job now. | `200` `{"steps":[{...}]}` |
 
-Job body (create and update):
+### Job body
+
+Create and update take the job body; fields are validated the same way as the
+CLI (`id` pattern, parseable cron, `curl`-prefixed command, non-negative
+`retries`/`retry_delay`):
 
 ```json
 {
@@ -195,7 +308,14 @@ Job body (create and update):
 }
 ```
 
-`POST /run` returns the attempts performed, for example:
+`PUT` replaces the job entirely (unchanged fields must be re-sent); `POST` with
+no `id` generates one.
+
+### Run response
+
+`POST /api/v1/jobs/{id}/run` returns the attempts performed, one `steps`
+object per attempt — `200` even if the command failed, so callers can inspect
+the output:
 
 ```json
 {
@@ -211,43 +331,100 @@ Job body (create and update):
 TOKEN=sekrit
 BASE=http://127.0.0.1:8080
 
+# log in and capture a session token
 curl -s -X POST -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin"}' \
   "$BASE/api/v1/login"
 # → {"token":"<session token>"} — use it as Authorization: Bearer below
 
-curl -s -H "Authorization: Bearer $TOKEN"        "$BASE/api/v1/jobs"
+# list jobs
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/jobs"
+
+# create a job
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"ping","schedule":"* * * * *","curl":"curl -s https://example.com"}' \
   "$BASE/api/v1/jobs"
+
+# get one job
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/jobs/<id>"
+
+# update a job
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"ping","schedule":"*/5 * * * *","curl":"curl -s https://example.com","enabled":true}' \
+  "$BASE/api/v1/jobs/<id>"
+
+# run a job now and see the attempts
 curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/jobs/<id>/run"
+
+# run history
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/jobs/<id>/runs"
+
+# delete
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/jobs/<id>"
+# → 204
 ```
 
 ## Web UI
 
 Get the UI at `/` from the host: `http://localhost:8080`. Sign in with the
 configured username and password (default `admin`/`admin`). On success the UI
-stores a signed session token in session storage and uses it for the REST API;
-then create, edit, enable/disable, run, and delete jobs as before. The UI is a
-small static single-page app embedded into the binary via
+stores a signed session token in session storage and uses it for the REST API.
+
+### Dashboard (`/`)
+
+- **Stat cards** at the top summarize your jobs: Total, Enabled, Healthy, and
+  Failing.
+- **Filter jobs** by typing in the search box (matches name, id, schedule).
+- **New job** opens the editor to create a job.
+- Each row shows the job name/id, schedule, last-run status and relative time,
+  a status badge, and an enable/disable toggle.
+- Row actions: **run** (fires now and shows the attempts inline), **edit**
+  (opens the editor), and **delete** (asks for confirmation).
+- Clicking a row opens the job detail page.
+
+### Job detail (`/jobs/:id`)
+
+- Job card with schedule, retries, retry delay, enable/disable toggle, and the
+  full curl command (with a copy button).
+- Actions: **Run now**, **Edit**, **Delete**.
+- **History** tab lists past runs (newest first) with trigger, relative time,
+  status dot, and exit code; click a run to expand its attempt-by-attempt
+  output.
+- **Run output** tab shows the output of the most recent "run now".
+
+### Notes
+
+- A light/dark **theme toggle** is in the header; the choice is remembered in
+  `localStorage`.
+- The session token lives in `sessionStorage` (`cronix_token`) and is cleared
+  by **Sign out**; closing the tab signs you out automatically.
+- Client-side routes (`/jobs/:id`) reload fine — the server serves the SPA
+  shell for any path that is not a real asset or API route.
+
+The UI is a small static single-page app embedded into the binary via
 `go:embed` (in `spa.go`, serving the built `dist/` directory).
 
-The UI source lives in `ui/` (Vite + React). Rebuild it with `make ui` (runs
-`npm ci` and the production build). For development, `npm --prefix ui run dev`
-starts the Vite dev server with a `/api` proxy to `http://127.0.0.1:8080`, so
-you get hot reload while the running server serves the API.
+## Environment Variables
 
-## Command Syntax and Limits
+| Variable | Default | Notes |
+|---|---|---|
+| `CRONIX_API_TOKEN` | — | **Required.** Bearer token for the REST API and web UI. The server refuses to start without it. |
+| `CRONIX_USERNAME` | `admin` | Username for the web UI login. |
+| `CRONIX_PASSWORD` | `admin` | Password for the web UI login. |
+| `CRONIX_SESSION_TTL` | `24h` | Lifetime of a web session token. Unparseable values silently fall back to the default. |
+| `CRONIX_STORE_PATH` | `/data/jobs.json` | Path to the jobs store. The directory is created if missing. |
+| `CRONIX_RUNS_PATH` | `/data/runs.json` | Path to the run-history store. Keeps the last 50 runs per job. |
+| `CRONIX_HTTP_ADDR` | `:8080` | Address the HTTP server listens on. |
+| `CURL_PATH` | `/usr/local/bin/curl` | Path to the `curl` binary used to run jobs. |
+| `TZ` | container local time | Timezone the cron scheduler uses. Set e.g. `TZ=America/New_York`. |
 
-- Each job's command **must begin with `curl`** followed by options — anything
-  else is rejected on create/update.
-- Arguments are parsed like a POSIX shell would: single quotes, double quotes,
-  and backslash escapes are honored (e.g. quoted JSON bodies with spaces work).
-- There is **no shell** involved: no `&&`, pipes, variable expansion (`$VAR`),
-  redirects, or globs inside commands. Cronix tokenizes the string with
-  `shlex` and `exec`s `curl` with the resulting arguments.
-- On a non-zero exit Cronix retries after `retry_delay` seconds, up to `retries`
-  extra attempts. Each attempt is logged and capped at the last 4 KiB of output.
+### Migration note: `CRON_*` is gone
+
+Cronix v1 configured jobs through `CRON_SCHEDULE_<i>` / `CRON_CURL_<i>` env
+variables. These **no longer exist**. Jobs are now first-class objects stored at
+`CRONIX_STORE_PATH` and managed via the CLI, REST API, or web UI. To migrate, add
+each env-configured job once with `/cronix cli add` (or the API) and mount the
+store volume for persistence.
 
 ## Logs
 
@@ -255,11 +432,27 @@ Every scheduled fire produces a timestamped line on stdout, visible with
 `docker logs`:
 
 ```
-2026/08/16 10:40:00 job=3f8a1c2b0d4e schedule="* * * * *" attempt=1/1 exit=0 output=
+2026/08/16 10:40:00 job=3f8a1c2b0d4e name=ping schedule="* * * * *" attempt=1/1 exit=0 output=
 ```
 
-Field-by-field: `job` id, cron `schedule`, `attempt=<n>/<total>`, `exit` code,
-and `output` (last 4 KiB of combined stdout+stderr). Disabled jobs do not fire.
+Field-by-field: `job` id, optional `name`, cron `schedule`, `attempt=<n>/<total>`,
+`exit` code, and `output` (last 4 KiB of combined stdout+stderr). Disabled jobs
+do not fire.
+
+Manual runs (`cli run`, the web UI "Run now", or `POST /run`) log a fuller
+block per run:
+
+```
+run job=ping1 name=ping schedule="0 9 * * *" command="curl -s https://example.com"
+  attempt 1/2 exit=6
+    output: curl: (6) Could not resolve host
+  attempt 2/2 exit=6
+    output: curl: (6) Could not resolve host
+  result: FAILED (last exit=6, 2/2 attempts)
+```
+
+`result:` is `OK`, `FAILED` (exhausted retries with a non-zero exit), or
+`ERROR` (the command could not be started).
 
 ## Exit Behavior
 
@@ -286,35 +479,6 @@ and `output` (last 4 KiB of combined stdout+stderr). Disabled jobs do not fire.
   shell-injection surface beyond what a regular `curl` invocation allows.
 - The static curl is built from a pinned, checksum-verified release with
   trimming of unused features (LDAP, HTTP/2, brotli, etc.).
-- `CURL_CA_BUNDLE` is preset so HTTPS certificate verification works out of
-  the box.
-
-## Building from Source
-
-```sh
-git clone <your-repo-url>
-cd cronix
-docker build -t cronix .
-```
-
-The `Dockerfile` compiles `curl` statically (pinned version + SHA256) in a
-`golang:1.24-alpine` build stage and copies only the resulting binary, the
-Cronix binary, and certificates into `scratch`. A `node:22-alpine` stage runs
-`npm ci` + `vite build` and copies the output into the Go stage, so the image
-embeds the UI. The first build takes a few minutes to compile curl; later
-builds reuse the cache.
-
-The built UI (`dist/`) is not committed. Run `make ui` before `make build`,
-`make test`, or `make vet` so the Go toolchain has the embedded assets; the
-Docker image builds the UI inside a Node stage automatically.
-
-### Tests
-
-```sh
-go test ./...
-```
-
-Runs unit tests for the controller, store, runner, CLI, API, and SPA handlers.
 
 ## License
 

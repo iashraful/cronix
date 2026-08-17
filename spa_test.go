@@ -44,3 +44,18 @@ func TestSpaServesReactIndex(t *testing.T) {
 		t.Error("built index should reference Vite asset bundles")
 	}
 }
+
+func TestSpaServesIndexForClientRoute(t *testing.T) {
+	h := spaServer(t)
+	for _, path := range []string{"/jobs", "/jobs/abc123", "/runs/xyz"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s: want 200, got %d", path, w.Code)
+		}
+		ct := w.Header().Get("Content-Type")
+		if !strings.Contains(ct, "text/html") {
+			t.Errorf("GET %s: want html content type, got %q", path, ct)
+		}
+	}
+}
