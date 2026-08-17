@@ -5,3 +5,6 @@ Dockerfile
 ui/node_modules
 .superpowers
 .data
+dist
+web
+bin
