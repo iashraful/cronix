@@ -40,6 +40,9 @@ On the first start the server logs that no jobs are configured; add one with
 | Variable | Default | Notes |
 |---|---|---|
 | `CRONIX_API_TOKEN` | — | **Required.** Bearer token for the REST API and web UI. The server refuses to start without it. |
+| `CRONIX_USERNAME` | `admin` | Username for the web UI login. |
+| `CRONIX_PASSWORD` | `admin` | Password for the web UI login. |
+| `CRONIX_SESSION_TTL` | `24h` | Lifetime of a web session token. Unparseable values silently fall back to the default. |
 | `CRONIX_STORE_PATH` | `/data/jobs.json` | Path to the JSON store. The directory is created if missing. |
 | `CRONIX_RUNS_PATH` | `/data/runs.json` | Path to the run-history store. Keeps the last 50 runs per job. |
 | `CRONIX_HTTP_ADDR` | `:8080` | Address the HTTP server listens on. |
@@ -162,12 +165,15 @@ Run it from your host with `docker exec <container> /cronix cli ...`, e.g.
 ## REST API
 
 `BASE = http://HOST:8080`. All `/api/v1/*` routes require
-`Authorization: Bearer <token>` (constant-time compared); otherwise `401`.
+`Authorization: Bearer <token>` (constant-time compared); otherwise `401`. The
+token is either the static `CRONIX_API_TOKEN` or a session token from
+`POST /api/v1/login`.
 Errors return `{"error": "..."}` with status `400` (validation), `404`
 (not found), or `500` (storage/other).
 
 | Method & Path | Description | Success |
 |---|---|---|
+| `POST /api/v1/login` | Log in with the configured username/password; returns a session token. | `200` `{"token":"..."}` |
 | `GET /api/v1/jobs` | List all jobs. | `200` JSON array |
 | `POST /api/v1/jobs` | Create a job. | `201` created job |
 | `GET /api/v1/jobs/{id}` | Get one job. | `200` job |
@@ -205,6 +211,11 @@ Job body (create and update):
 TOKEN=sekrit
 BASE=http://127.0.0.1:8080
 
+curl -s -X POST -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}' \
+  "$BASE/api/v1/login"
+# → {"token":"<session token>"} — use it as Authorization: Bearer below
+
 curl -s -H "Authorization: Bearer $TOKEN"        "$BASE/api/v1/jobs"
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"ping","schedule":"* * * * *","curl":"curl -s https://example.com"}' \
@@ -214,9 +225,11 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/jobs/<id>/run"
 
 ## Web UI
 
-Get the UI at `/` from the host: `http://localhost:8080`. Enter the API token
-(saved in session storage), then create, edit, enable/disable, run, and delete
-jobs. The UI is a small static single-page app embedded into the binary via
+Get the UI at `/` from the host: `http://localhost:8080`. Sign in with the
+configured username and password (default `admin`/`admin`). On success the UI
+stores a signed session token in session storage and uses it for the REST API;
+then create, edit, enable/disable, run, and delete jobs as before. The UI is a
+small static single-page app embedded into the binary via
 `go:embed` (in `spa.go`, serving the built `web/` directory).
 
 The UI source lives in `ui/` (Vite + React). Rebuild it with `make ui` (runs
@@ -261,6 +274,11 @@ and `output` (last 4 KiB of combined stdout+stderr). Disabled jobs do not fire.
 - The REST API is protected by a single bearer token (`CRONIX_API_TOKEN`), sent
   as `Authorization: Bearer`. There is no TLS inside the container; put a proxy
   in front for anything beyond localhost.
+- The web UI logs in with a single configured username/password pair
+  (`CRONIX_USERNAME`/`CRONIX_PASSWORD`). The defaults are `admin`/`admin` — set
+  real credentials for anything beyond local use. Session tokens are
+  HMAC-signed with the `CRONIX_API_TOKEN`, so rotating the API token invalidates
+  all issued web sessions.
 - The container runs as root and the image is intentionally minimal. For
   elevated hardening, run with `--user` (e.g. `docker run --user 65534:65534`)
   — curl needs no special privileges.
