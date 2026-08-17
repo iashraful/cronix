@@ -93,7 +93,7 @@ export default function JobDetail({ logout }) {
 
   const toggle = () => {
     api.updateJob(job.id, { ...job, enabled: !job.enabled })
-      .then((j) => { setJob(j); return api.listRuns(id).then((r) => setRuns((r && r.runs) || [])) })
+      .then((j) => { setJob({ ...j, last_run: job.last_run }); return api.listRuns(id).then((r) => setRuns((r && r.runs) || [])) })
       .catch((e) => handleApiError(e, { logout, setError }))
   }
 
@@ -122,14 +122,14 @@ export default function JobDetail({ logout }) {
           <p><Link to="/">← Back to jobs</Link></p>
         </div>
       )}
-      {!loading && error && (
+      {!loading && error && !editing && (
         <div className="banner">
           <span>{error}</span>
           <Button variant="ghost" size="sm" className="retry" onClick={refresh}>Retry</Button>
         </div>
       )}
 
-      {!loading && !notFound && !error && job && (
+      {!loading && !notFound && job && (editing || !error) && (
         <div className="grid-detail">
           <div>
             {!editing ? (
