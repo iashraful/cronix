@@ -23,6 +23,7 @@ describe('design system', () => {
     const classes = [
       '.btn.primary', '.btn.danger', '.stats', '.stat-label', '.tbl', '.pill.ok',
       '.dot.failed', '.toggle.on', '.tabs', '.tab.active', '.run-item', '.banner', '.cmd-block',
+      '.page-shell', '.header-spacer', '.wide', '.run-item.open', '.banner .retry',
     ]
     for (const c of classes) expect(css, `missing class ${c}`).toContain(c)
   })

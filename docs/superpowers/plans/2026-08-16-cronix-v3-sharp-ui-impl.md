@@ -247,6 +247,7 @@ body {
 }
 
 .app { min-height: 100vh; display: flex; flex-direction: column; }
+.page-shell { min-height: 100vh; display: flex; flex-direction: column; }
 
 /* ---- Header ---- */
 .header {
@@ -262,9 +263,10 @@ body {
   border-bottom: 1px solid var(--border-subtle);
 }
 .header .brand { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; margin: 0 auto 0 0; }
-.header .spacer { flex: 1; }
+.header .spacer, .header-spacer { flex: 1; }
 
 .main { width: 100%; max-width: 1080px; margin: 0 auto; padding: 24px; }
+.wide { width: 100%; max-width: 1280px; margin: 0 auto; padding: 24px; }
 
 /* ---- Buttons ---- */
 .btn {
@@ -464,6 +466,7 @@ body {
   transition: background 120ms;
 }
 .run-item:hover { background: var(--bg-hover); }
+.run-item.open { border-color: var(--accent); background: var(--accent-soft); }
 .run-meta { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .run-meta .rel { color: var(--text-muted); font-size: 13px; }
 .run-meta .exit { font-family: var(--mono); font-size: 13px; color: var(--text-secondary); margin-left: auto; }
@@ -485,6 +488,7 @@ body {
   margin-bottom: 16px;
   font-size: 14px;
 }
+.banner .retry { flex: none; }
 .empty {
   text-align: center;
   padding: 48px 16px;
