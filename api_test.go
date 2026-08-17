@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestServer(t *testing.T, store Store) http.Handler {
@@ -18,7 +19,11 @@ func newTestServer(t *testing.T, store Store) http.Handler {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	return NewServer(c, "secret")
+	return NewServer(c, testAuth("secret"))
+}
+
+func testAuth(token string) AuthConfig {
+	return AuthConfig{Token: token, Username: "admin", Password: "admin", SessionTTL: time.Hour}
 }
 
 func req(t *testing.T, h http.Handler, method, path, token string, body any) (*httptest.ResponseRecorder, []byte) {
@@ -155,7 +160,7 @@ func TestAPIRunManual(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	h := NewServer(c, "secret")
+	h := NewServer(c, testAuth("secret"))
 	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("run: want 200, got %d: %s", w.Code, b)
@@ -178,7 +183,7 @@ func TestAPIRunExhaustedRetriesStillReturns200WithSteps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	h := NewServer(c, "secret")
+	h := NewServer(c, testAuth("secret"))
 	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("run with exhausted retries: want 200 with completed steps, got %d: %s", w.Code, b)
@@ -205,7 +210,7 @@ func TestAPIRunStartupFailureReturns500(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	h := NewServer(c, "secret")
+	h := NewServer(c, testAuth("secret"))
 	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("cannot-start-binary must stay a 500, got %d: %s", w.Code, b)
@@ -223,7 +228,7 @@ func TestAPIRunManualLogsBlockOnSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	h := NewServer(c, "secret")
+	h := NewServer(c, testAuth("secret"))
 	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("run: want 200, got %d: %s", w.Code, b)
@@ -245,7 +250,7 @@ func TestAPIRunManualLogsBlockOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	h := NewServer(c, "secret")
+	h := NewServer(c, testAuth("secret"))
 	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("run with exhausted retries: want 200, got %d: %s", w.Code, b)
@@ -263,7 +268,7 @@ func TestAPIRunsEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	h := NewServer(c, "secret")
+	h := NewServer(c, testAuth("secret"))
 	w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("run: %d: %s", w.Code, b)
@@ -299,7 +304,7 @@ func TestAPIListIncludesLastRunSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	h := NewServer(c, "secret")
+	h := NewServer(c, testAuth("secret"))
 	if w, b := req(t, h, "POST", "/api/v1/jobs/a/run", "secret", nil); w.Code != http.StatusOK {
 		t.Fatalf("run: %d: %s", w.Code, b)
 	}
@@ -337,7 +342,7 @@ func TestAPIGetIncludesLastRunSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	h := NewServer(c, "secret")
+	h := NewServer(c, testAuth("secret"))
 	w, b := req(t, h, "GET", "/api/v1/jobs/a", "secret", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get: %d", w.Code)
@@ -358,12 +363,88 @@ func TestCLIListStillDecodesJobResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	addr := withCLIServer(t, NewServer(c, "tok"))
+	addr := withCLIServer(t, NewServer(c, testAuth("tok")))
 	out := new(bytes.Buffer)
 	if code := runCLIIn([]string{"list", "--addr", addr, "--token", "tok"}, out); code != 0 {
 		t.Fatalf("list: exit %d: %s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "ping") {
 		t.Errorf("list output broken by last_run field: %s", out.String())
+	}
+}
+
+func TestAPILoginSuccessIssuesUsableToken(t *testing.T) {
+	h := newTestServer(t, &memStore{})
+	w, b := req(t, h, "POST", "/api/v1/login", "",
+		map[string]any{"username": "admin", "password": "admin"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("login: want 200, got %d: %s", w.Code, b)
+	}
+	var resp struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(b, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Token == "" {
+		t.Fatal("login response missing token")
+	}
+	w, b = req(t, h, "GET", "/api/v1/jobs", resp.Token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list with session token: want 200, got %d: %s", w.Code, b)
+	}
+}
+
+func TestAPILoginRejectsBadCredentials(t *testing.T) {
+	h := newTestServer(t, &memStore{})
+	for _, body := range []map[string]any{
+		{"username": "admin", "password": "wrong"},
+		{"username": "wrong", "password": "admin"},
+		{"username": "wrong", "password": "wrong"},
+	} {
+		w, _ := req(t, h, "POST", "/api/v1/login", "", body)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%v: want 401, got %d", body, w.Code)
+		}
+	}
+}
+
+func TestAPILoginRejectsMalformedBody(t *testing.T) {
+	h := newTestServer(t, &memStore{})
+	w, _ := req(t, h, "POST", "/api/v1/login", "", map[string]any{"username": "admin"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("missing password: want 400, got %d", w.Code)
+	}
+	w, _ = req(t, h, "POST", "/api/v1/login", "", "garbage")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("wrong typed body: want 400, got %d", w.Code)
+	}
+}
+
+func TestAPISessionTokenAuthorized(t *testing.T) {
+	c, err := NewController(&memStore{}, &memRunStore{}, "/bin/true")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, testAuth("secret"))
+	token, err := issueSessionToken([]byte("secret"), "admin", time.Hour)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	w, _ := req(t, h, "GET", "/api/v1/jobs", token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("session token: want 200, got %d", w.Code)
+	}
+}
+
+func TestAPIExpiredSessionTokenRejected(t *testing.T) {
+	h := newTestServer(t, &memStore{})
+	token, err := issueSessionToken([]byte("secret"), "admin", -time.Second)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	w, _ := req(t, h, "GET", "/api/v1/jobs", token, nil)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expired session: want 401, got %d", w.Code)
 	}
 }

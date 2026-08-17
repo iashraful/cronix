@@ -20,7 +20,7 @@ func TestRunCLC_listAndAddFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	addr := withCLIServer(t, NewServer(c, "tok"))
+	addr := withCLIServer(t, NewServer(c, testAuth("tok")))
 	out := new(bytes.Buffer)
 	code := runCLIIn([]string{"add", "--addr", addr, "--token", "tok",
 		"--name", "ping", "--schedule", "*/5 * * * *", "--curl", "curl http://x"}, out)
@@ -50,7 +50,7 @@ func TestRunCLIBadTokenExit2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	addr := withCLIServer(t, NewServer(c, "tok"))
+	addr := withCLIServer(t, NewServer(c, testAuth("tok")))
 	out := new(bytes.Buffer)
 	code := runCLIIn([]string{"list", "--addr", addr, "--token", "nope"}, out)
 	if code != 2 {
@@ -96,7 +96,7 @@ func TestRunCLIRunPrintsBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	addr := withCLIServer(t, NewServer(c, "tok"))
+	addr := withCLIServer(t, NewServer(c, testAuth("tok")))
 	out := new(bytes.Buffer)
 	code := runCLIIn([]string{"run", "--addr", addr, "--token", "tok", "a"}, out)
 	if code != 0 {
@@ -118,7 +118,7 @@ func TestRunCLIRunFailedPrintsFailedBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	addr := withCLIServer(t, NewServer(c, "tok"))
+	addr := withCLIServer(t, NewServer(c, testAuth("tok")))
 	out := new(bytes.Buffer)
 	code := runCLIIn([]string{"run", "--addr", addr, "--token", "tok", "a"}, out)
 	if code != 0 {

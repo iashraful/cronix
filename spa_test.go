@@ -14,7 +14,7 @@ func spaServer(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("NewController: %v", err)
 	}
-	return NewServer(c, "secret")
+	return NewServer(c, testAuth("secret"))
 }
 
 func TestSpaServesIndex(t *testing.T) {

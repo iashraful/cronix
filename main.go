@@ -25,6 +25,15 @@ func envOr(name, def string) string {
 	return def
 }
 
+func envDuration(name string, def time.Duration) time.Duration {
+	if v := os.Getenv(name); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
+}
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cli" {
 		os.Exit(RunCLI(os.Args[2:]))
@@ -52,7 +61,15 @@ func main() {
 	}
 	ctrl.Start()
 
-	srv := &http.Server{Addr: httpAddr, Handler: NewServer(ctrl, token)}
+	srv := &http.Server{
+		Addr: httpAddr,
+		Handler: NewServer(ctrl, AuthConfig{
+			Token:      token,
+			Username:   envOr("CRONIX_USERNAME", "admin"),
+			Password:   envOr("CRONIX_PASSWORD", "admin"),
+			SessionTTL: envDuration("CRONIX_SESSION_TTL", 24*time.Hour),
+		}),
+	}
 	go func() {
 		log.Printf("api listening on %s", httpAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

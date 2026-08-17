@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type jobRequest struct {
@@ -48,14 +49,22 @@ func (r jobRequest) toJob() Job {
 	return j
 }
 
-type Server struct {
-	ctrl  *Controller
-	token string
+type AuthConfig struct {
+	Token      string
+	Username   string
+	Password   string
+	SessionTTL time.Duration
 }
 
-func NewServer(ctrl *Controller, token string) http.Handler {
-	s := &Server{ctrl: ctrl, token: token}
+type Server struct {
+	ctrl *Controller
+	cfg  AuthConfig
+}
+
+func NewServer(ctrl *Controller, cfg AuthConfig) http.Handler {
+	s := &Server{ctrl: ctrl, cfg: cfg}
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/login", s.handleLogin)
 	mux.HandleFunc("GET /api/v1/jobs", s.auth(s.handleList))
 	mux.HandleFunc("POST /api/v1/jobs", s.auth(s.handleCreate))
 	mux.HandleFunc("GET /api/v1/jobs/{id}", s.auth(s.handleGet))
@@ -75,13 +84,46 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		got := strings.TrimPrefix(h, prefix)
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
+		if !s.validAuth(strings.TrimPrefix(h, prefix)) {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 		next(w, r)
 	}
+}
+
+func (s *Server) validAuth(got string) bool {
+	if subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.Token)) == 1 {
+		return true
+	}
+	_, ok := validateSessionToken([]byte(s.cfg.Token), got)
+	return ok
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var reqJSON struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqJSON); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: %v", err)
+		return
+	}
+	if reqJSON.Username == "" || reqJSON.Password == "" {
+		writeError(w, http.StatusBadRequest, "username and password are required")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(reqJSON.Username), []byte(s.cfg.Username)) != 1 ||
+		subtle.ConstantTimeCompare([]byte(reqJSON.Password), []byte(s.cfg.Password)) != 1 {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+	token, err := issueSessionToken([]byte(s.cfg.Token), reqJSON.Username, s.cfg.SessionTTL)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "%s", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }
 
 type jobResponse struct {

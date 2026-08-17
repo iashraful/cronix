@@ -47,6 +47,8 @@ ui:
 run:
 	mkdir -p $(DATA_DIR)
 	CRONIX_API_TOKEN=$${CRONIX_API_TOKEN:-$(TOKEN)} \
+	CRONIX_USERNAME=$${CRONIX_USERNAME:-admin} \
+	CRONIX_PASSWORD=$${CRONIX_PASSWORD:-admin} \
 	CRONIX_STORE_PATH=$(STORE) \
 	go run .
 
@@ -58,6 +60,8 @@ docker-run:
 	mkdir -p $(DATA_DIR)
 	docker run --rm -d --name $(CONTAINER) \
 		-e CRONIX_API_TOKEN=$${CRONIX_API_TOKEN:-$(TOKEN)} \
+		-e CRONIX_USERNAME=$${CRONIX_USERNAME:-admin} \
+		-e CRONIX_PASSWORD=$${CRONIX_PASSWORD:-admin} \
 		-v "$$(pwd)/$(DATA_DIR):/data" \
 		-p $(PORT):8080 \
 		$(IMAGE)
