@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as api from '../api'
+import { handleApiError } from '../errors'
 import { filterJobs, relativeTime, summarizeJobs } from '../lib'
 import Button from '../components/Button'
 import Badge from '../components/Badge'
@@ -42,15 +43,6 @@ export default function Dashboard({ theme, onToggleTheme, logout }) {
   const [editing, setEditing] = useState(null)
   const [runPanel, setRunPanel] = useState(null)
 
-  const handleError = (e) => {
-    if (e.message === 'unauthorized') {
-      api.setToken('')
-      logout()
-      return
-    }
-    setError(e.message)
-  }
-
   const refresh = useMemo(
     () => () =>
       api.listJobs()
@@ -58,7 +50,7 @@ export default function Dashboard({ theme, onToggleTheme, logout }) {
           setJobs(Array.isArray(j) ? j : [])
           setError('')
         })
-        .catch(handleError),
+        .catch((e) => handleApiError(e, { logout, setError })),
     [],
   )
 
@@ -80,19 +72,19 @@ export default function Dashboard({ theme, onToggleTheme, logout }) {
       setEditing(null)
       setError('')
       refresh()
-    }).catch(handleError)
+    }).catch((e) => handleApiError(e, { logout, setError }))
   }
 
   const toggle = (j) =>
     api.updateJob(j.id, { ...j, enabled: !j.enabled })
       .then(refresh)
-      .catch(handleError)
+      .catch((e) => handleApiError(e, { logout, setError }))
 
   const remove = (j) => {
     if (!window.confirm(`Delete job ${j.name || j.id}?`)) return
     api.deleteJob(j.id)
       .then(refresh)
-      .catch(handleError)
+      .catch((e) => handleApiError(e, { logout, setError }))
   }
 
   const runNow = (j) =>
@@ -101,7 +93,7 @@ export default function Dashboard({ theme, onToggleTheme, logout }) {
         setRunPanel({ name: j.name || j.id, steps: (r && r.steps) || [] })
         refresh()
       })
-      .catch(handleError)
+      .catch((e) => handleApiError(e, { logout, setError }))
 
   return (
     <>

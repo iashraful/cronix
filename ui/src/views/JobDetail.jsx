@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import * as api from '../api'
+import { handleApiError } from '../errors'
 import { relativeTime } from '../lib'
 import Button from '../components/Button'
 import Badge from '../components/Badge'
@@ -71,18 +72,6 @@ export default function JobDetail({ logout }) {
   const [copied, setCopied] = useState(false)
   const [lastRunOutput, setLastRunOutput] = useState(null)
 
-  const handleError = useCallback(
-    (e) => {
-      if (e.message === 'unauthorized') {
-        api.setToken('')
-        logout()
-        return
-      }
-      setError(e.message)
-    },
-    [logout],
-  )
-
   const refresh = useCallback(() => {
     setLoading(true)
     setError('')
@@ -95,8 +84,8 @@ export default function JobDetail({ logout }) {
       setJob(j)
       setNotFound(false)
       return api.listRuns(id).then((r) => setRuns((r && r.runs) || []))
-    }).catch(handleError).finally(() => setLoading(false))
-  }, [id, handleError])
+    }).catch((e) => handleApiError(e, { logout, setError })).finally(() => setLoading(false))
+  }, [id])
 
   useEffect(() => {
     refresh()
@@ -105,7 +94,7 @@ export default function JobDetail({ logout }) {
   const toggle = () => {
     api.updateJob(job.id, { ...job, enabled: !job.enabled })
       .then((j) => { setJob(j); return api.listRuns(id).then((r) => setRuns((r && r.runs) || [])) })
-      .catch(handleError)
+      .catch((e) => handleApiError(e, { logout, setError }))
   }
 
   const runNow = () => {
@@ -115,7 +104,7 @@ export default function JobDetail({ logout }) {
         setTab('output')
         refresh()
       })
-      .catch(handleError)
+      .catch((e) => handleApiError(e, { logout, setError }))
   }
 
   return (
@@ -186,7 +175,7 @@ export default function JobDetail({ logout }) {
                   <Button onClick={() => setEditing(true)}>Edit</Button>
                   <Button variant="danger" onClick={() => {
                     if (!window.confirm(`Delete job ${job.name || job.id}?`)) return
-                    api.deleteJob(id).then(() => navigate('/')).catch(handleError)
+                    api.deleteJob(id).then(() => navigate('/')).catch((e) => handleApiError(e, { logout, setError }))
                   }}>Delete</Button>
                 </div>
 
@@ -215,7 +204,7 @@ export default function JobDetail({ logout }) {
                 onSave={(form) => {
                   api.updateJob(job.id, { ...form, id: job.id })
                     .then(() => { setEditing(false); refresh() })
-                    .catch(handleError)
+                    .catch((e) => handleApiError(e, { logout, setError }))
                 }}
                 onCancel={() => setEditing(false)}
               />
