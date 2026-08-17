@@ -8,3 +8,4 @@ ui/node_modules
 dist
 web
 bin
+internal/spa/dist
