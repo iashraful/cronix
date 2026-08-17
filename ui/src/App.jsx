@@ -5,33 +5,54 @@ import Dashboard from './views/Dashboard'
 import JobDetail from './views/JobDetail'
 
 function Login({ onToken }) {
-  const [input, setInput] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
   return (
     <div className="main">
       <form
         className="card"
         style={{ maxWidth: 360, margin: '48px auto' }}
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault()
-          const t = input.trim()
-          api.setToken(t)
-          onToken(t)
+          setError('')
+          try {
+            const res = await api.login(username.trim(), password)
+            api.setToken(res.token)
+            onToken(res.token)
+          } catch (err) {
+            setError(err.message)
+          }
         }}
       >
         <h1 style={{ margin: '0 0 4px' }}>Cronix</h1>
-        <p className="muted" style={{ margin: '0 0 16px' }}>Enter your API token to manage jobs.</p>
+        <p className="muted" style={{ margin: '0 0 16px' }}>Sign in to manage your jobs.</p>
         <div className="field">
-          <label htmlFor="login-token">API token</label>
+          <label htmlFor="login-username">Username</label>
           <input
-            id="login-token"
+            id="login-username"
             className="input"
-            type="password"
-            value={input}
-            placeholder="••••••••"
+            type="text"
+            value={username}
+            autoComplete="username"
             autoFocus
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => setUsername(e.target.value)}
           />
         </div>
+        <div className="field">
+          <label htmlFor="login-password">Password</label>
+          <input
+            id="login-password"
+            className="input"
+            type="password"
+            value={password}
+            autoComplete="current-password"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+        {error && (
+          <p className="muted" style={{ margin: '0 0 12px' }}>{error}</p>
+        )}
         <button className="btn primary" type="submit" style={{ width: '100%' }}>Sign in</button>
       </form>
     </div>
