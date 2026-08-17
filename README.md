@@ -230,7 +230,7 @@ configured username and password (default `admin`/`admin`). On success the UI
 stores a signed session token in session storage and uses it for the REST API;
 then create, edit, enable/disable, run, and delete jobs as before. The UI is a
 small static single-page app embedded into the binary via
-`go:embed` (in `spa.go`, serving the built `web/` directory).
+`go:embed` (in `spa.go`, serving the built `dist/` directory).
 
 The UI source lives in `ui/` (Vite + React). Rebuild it with `make ui` (runs
 `npm ci` and the production build). For development, `npm --prefix ui run dev`
@@ -304,8 +304,9 @@ Cronix binary, and certificates into `scratch`. A `node:22-alpine` stage runs
 embeds the UI. The first build takes a few minutes to compile curl; later
 builds reuse the cache.
 
-The built `web/` assets are committed, so a plain `go build` needs no Node
-toolchain; only the Docker image (or `make ui`) invokes npm.
+The built UI (`dist/`) is not committed. Run `make ui` before `make build`,
+`make test`, or `make vet` so the Go toolchain has the embedded assets; the
+Docker image builds the UI inside a Node stage automatically.
 
 ### Tests
 

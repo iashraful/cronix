@@ -6,11 +6,11 @@ import (
 	"net/http"
 )
 
-//go:embed web
+//go:embed dist
 var webFS embed.FS
 
 func SPAHandler() http.Handler {
-	sub, err := fs.Sub(webFS, "web")
+	sub, err := fs.Sub(webFS, "dist")
 	if err != nil {
 		panic(err)
 	}
