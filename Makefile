@@ -17,7 +17,7 @@ help:
 	@echo "  test           run all Go tests"
 	@echo "  vet            run go vet"
 	@echo "  lint           check gofmt"
-	@echo "  ui              build the React UI into web/ (npm ci + vite build)"
+	@echo "  ui              build the React UI into dist/ (npm ci + vite build)"
 	@echo "  run            run the server locally (token: $$CRONIX_API_TOKEN or $(TOKEN))"
 	@echo "  docker-build   build the Docker image"
 	@echo "  docker-run     start the container (volume $(DATA_DIR), port $(PORT))"
@@ -28,13 +28,13 @@ help:
 	@echo "  cli-run ID     run a job now via the running container"
 	@echo "  clean          remove build artifacts and local data"
 
-build:
+build: ui
 	go build -o bin/$(BINARY) .
 
-test:
+test: ui
 	go test ./...
 
-vet:
+vet: ui
 	go vet ./...
 
 lint:
@@ -44,7 +44,7 @@ ui:
 	npm --prefix ui ci
 	npm --prefix ui run build
 
-run:
+run: ui
 	mkdir -p $(DATA_DIR)
 	CRONIX_API_TOKEN=$${CRONIX_API_TOKEN:-$(TOKEN)} \
 	CRONIX_USERNAME=$${CRONIX_USERNAME:-admin} \
