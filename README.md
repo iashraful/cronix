@@ -35,7 +35,7 @@ docker run --rm -d --name cronix \
   -e CRONIX_PASSWORD=admin \
   -v /tmp/cronix-data:/data \
   -p 8080:8080 \
-  cronix
+  iashraful/cronix
 
 # add and list jobs through the CLI (executed inside the container)
 docker exec cronix /cronix cli add --name ping --schedule '* * * * *' --curl 'curl -s https://example.com' --token sekrit
@@ -89,7 +89,7 @@ docker run --rm -d --name cronix \
   -e CRONIX_API_TOKEN=sekrit \
   -v my-cronix-data:/data \
   -p 8080:8080 \
-  cronix
+  iashraful/cronix
 ```
 
 ### Cron Schedules
@@ -128,7 +128,7 @@ docker run --rm -d --name cronix \
   -e TZ=America/New_York \
   -v /tmp/cronix-data:/data \
   -p 8080:8080 \
-  cronix
+  iashraful/cronix
 ```
 
 ### Curl Commands
