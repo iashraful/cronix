@@ -375,6 +375,39 @@ func TestAPIListIncludesLastRunSummary(t *testing.T) {
 	}
 }
 
+func TestAPIListIncludesNextRun(t *testing.T) {
+	c, err := controller.NewController(&memStore{jobs: []model.Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl true", Enabled: true},
+		{Id: "b", Schedule: "* * * * *", Curl: "curl true", Enabled: false},
+	}}, &memRunStore{}, "/usr/bin/env")
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	h := NewServer(c, testAuth("secret"))
+	w, b := req(t, h, "GET", "/api/v1/jobs", "secret", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list: %d: %s", w.Code, b)
+	}
+	var jobs []jobResponse
+	if err := json.Unmarshal(b, &jobs); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	var enabled, disabled *jobResponse
+	for i := range jobs {
+		if jobs[i].Id == "a" {
+			enabled = &jobs[i]
+		} else {
+			disabled = &jobs[i]
+		}
+	}
+	if enabled == nil || enabled.NextRun == nil || !enabled.NextRun.After(time.Now()) {
+		t.Errorf("enabled job should carry a future next_run: %+v", enabled)
+	}
+	if disabled == nil || disabled.NextRun != nil {
+		t.Errorf("disabled job should have no next_run: %+v", disabled)
+	}
+}
+
 func TestAPIGetIncludesLastRunSummary(t *testing.T) {
 	c, err := controller.NewController(&memStore{jobs: []model.Job{
 		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},

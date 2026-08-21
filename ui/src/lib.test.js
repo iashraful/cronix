@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterJobs, relativeTime, summarizeJobs } from './lib'
+import { filterJobs, relativeTime, relativeUntil, summarizeJobs } from './lib'
 
 describe('relativeTime', () => {
   it('returns empty for missing input', () => {
@@ -13,6 +13,26 @@ describe('relativeTime', () => {
     expect(relativeTime(new Date(base - 90 * 1000).toISOString())).toBe('1m ago')
     expect(relativeTime(new Date(base - 2 * 3600 * 1000).toISOString())).toBe('2h ago')
     expect(relativeTime(new Date(base - 3 * 86400 * 1000).toISOString())).toBe('3d ago')
+  })
+})
+
+describe('relativeUntil', () => {
+  it('returns empty for missing input', () => {
+    expect(relativeUntil('')).toBe('')
+    expect(relativeUntil(null)).toBe('')
+  })
+
+  it('formats upcoming seconds / minutes / hours / days', () => {
+    const base = Date.now()
+    expect(relativeUntil(new Date(base + 30 * 1000).toISOString())).toBe('in 30s')
+    expect(relativeUntil(new Date(base + 95 * 1000).toISOString())).toBe('in 1m')
+    expect(relativeUntil(new Date(base + 2 * 3600 * 1000).toISOString())).toBe('in 2h')
+    expect(relativeUntil(new Date(base + 72 * 3600 * 1000).toISOString())).toBe('in 3d')
+  })
+
+  it('reports due-now for past or current timestamps', () => {
+    const base = Date.now()
+    expect(relativeUntil(new Date(base - 60 * 1000).toISOString())).toBe('due now')
   })
 })
 

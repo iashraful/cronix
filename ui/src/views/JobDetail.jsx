@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import * as api from '../api'
 import { handleApiError } from '../errors'
-import { relativeTime } from '../lib'
+import { relativeTime, relativeUntil } from '../lib'
 import Button from '../components/Button'
 import Badge from '../components/Badge'
 import StatusDot from '../components/StatusDot'
@@ -156,6 +156,15 @@ export default function JobDetail({ logout }) {
                   <div>
                     <div className="k">Retry delay</div>
                     <div className="v">{job.retry_delay}s</div>
+                  </div>
+                  <div>
+                    <div className="k">Next run</div>
+                    <div
+                      className="v"
+                      title={job.next_run ? new Date(job.next_run).toLocaleString() : ''}
+                    >
+                      {job.enabled && job.next_run ? relativeUntil(job.next_run) : '—'}
+                    </div>
                   </div>
                   <div>
                     <div className="k">Enabled</div>

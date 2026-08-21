@@ -13,6 +13,20 @@ export function relativeTime(iso) {
   return days === 1 ? 'yesterday' : `${days}d ago`
 }
 
+export function relativeUntil(iso) {
+  if (!iso) return ''
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const secs = Math.floor((then - Date.now()) / 1000)
+  if (secs <= 0) return 'due now'
+  if (secs < 60) return `in ${secs}s`
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `in ${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `in ${hrs}h`
+  return `in ${Math.floor(hrs / 24)}d`
+}
+
 export function filterJobs(jobs, query) {
   const needle = (query || '').trim().toLowerCase()
   if (!needle) return jobs

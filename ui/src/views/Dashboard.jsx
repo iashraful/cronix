@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as api from '../api'
 import { handleApiError } from '../errors'
-import { filterJobs, relativeTime, summarizeJobs } from '../lib'
+import { filterJobs, relativeTime, relativeUntil, summarizeJobs } from '../lib'
 import Button from '../components/Button'
 import Badge from '../components/Badge'
 import StatusDot from '../components/StatusDot'
@@ -154,6 +154,7 @@ export default function Dashboard({ theme, onToggleTheme, logout }) {
             <tr>
               <th>Job</th>
               <th>Schedule</th>
+              <th>Next run</th>
               <th>Last run</th>
               <th>Status</th>
               <th>Enabled</th>
@@ -172,6 +173,13 @@ export default function Dashboard({ theme, onToggleTheme, logout }) {
                   <div className="mono muted" style={{ fontSize: 12 }}>{j.id}</div>
                 </td>
                 <td className="mono">{j.schedule}</td>
+                <td
+                  className="mono muted"
+                  style={{ fontSize: 13 }}
+                  title={j.next_run ? new Date(j.next_run).toLocaleString() : ''}
+                >
+                  {j.enabled && j.next_run ? relativeUntil(j.next_run) : '—'}
+                </td>
                 <td>
                   <div className="row">
                     <StatusDot status={j.last_run ? j.last_run.status : null} />

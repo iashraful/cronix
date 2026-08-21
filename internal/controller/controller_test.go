@@ -465,6 +465,27 @@ func TestLastRunNilWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestNextRun(t *testing.T) {
+	c := newTestController(t, &memStore{jobs: []model.Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl http://x", Enabled: true},
+		{Id: "b", Schedule: "* * * * *", Curl: "curl http://x", Enabled: false},
+	}})
+	next, err := c.NextRun("a")
+	if err != nil {
+		t.Fatalf("next run: %v", err)
+	}
+	if next == nil || !next.After(time.Now()) {
+		t.Errorf("enabled job should have a future next run: %+v", next)
+	}
+	next, err = c.NextRun("b")
+	if err != nil || next != nil {
+		t.Errorf("disabled job should have nil next run, got %v (%v)", next, err)
+	}
+	if _, err := c.NextRun("nope"); !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("want ErrNotFound, got %v", err)
+	}
+}
+
 func TestDeletePrunesHistory(t *testing.T) {
 	c, err := NewController(&memStore{jobs: []model.Job{
 		{Id: "a", Schedule: "* * * * *", Curl: "curl true", Enabled: true},

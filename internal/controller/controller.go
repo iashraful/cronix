@@ -267,6 +267,24 @@ func (c *Controller) LastRun(id string) *model.RunSummary {
 	return &model.RunSummary{Status: first.Status, ExitCode: first.ExitCode, Time: first.Time}
 }
 
+func (c *Controller) NextRun(id string) (*time.Time, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	job, ok := c.jobs[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", model.ErrNotFound, id)
+	}
+	if !job.Enabled {
+		return nil, nil
+	}
+	sched, err := cron.ParseStandard(job.Schedule)
+	if err != nil {
+		return nil, nil
+	}
+	next := sched.Next(time.Now())
+	return &next, nil
+}
+
 func (c *Controller) runsSnapshot() []model.Run {
 	out := make([]model.Run, 0, len(c.order))
 	for _, id := range c.order {

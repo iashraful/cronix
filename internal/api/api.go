@@ -135,13 +135,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 type jobResponse struct {
 	model.Job
 	LastRun *model.RunSummary `json:"last_run,omitempty"`
+	NextRun *time.Time        `json:"next_run,omitempty"`
+}
+
+func (s *Server) jobView(j model.Job) jobResponse {
+	next, err := s.ctrl.NextRun(j.Id)
+	if err != nil {
+		next = nil
+	}
+	return jobResponse{Job: j, LastRun: s.ctrl.LastRun(j.Id), NextRun: next}
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	jobs := s.ctrl.List()
 	out := make([]jobResponse, 0, len(jobs))
 	for _, j := range jobs {
-		out = append(out, jobResponse{Job: j, LastRun: s.ctrl.LastRun(j.Id)})
+		out = append(out, s.jobView(j))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -157,7 +166,7 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeCtrlError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, job)
+	writeJSON(w, http.StatusCreated, s.jobView(job))
 }
 
 func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +176,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 		writeCtrlError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, jobResponse{Job: job, LastRun: s.ctrl.LastRun(id)})
+	writeJSON(w, http.StatusOK, s.jobView(job))
 }
 
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +190,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeCtrlError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, job)
+	writeJSON(w, http.StatusOK, s.jobView(job))
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
