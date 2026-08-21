@@ -298,7 +298,13 @@ body {
 .run-meta .exit { font-family: var(--mono); font-size: 13px; color: var(--text-secondary); margin-left: auto; }
 .attempts { margin-top: 10px; padding-left: 18px; border-top: 1px dashed var(--border-subtle); padding-top: 8px; }
 .attempt { font-family: var(--mono); font-size: 13px; padding: 4px 0; color: var(--text-secondary); }
-.attempt .out { color: var(--text); }
+.attempt .out {
+  color: var(--text);
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre;
+  overscroll-behavior: contain;
+}
 
 /* ---- Messaging ---- */
 .banner {
