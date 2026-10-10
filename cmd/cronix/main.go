@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -40,6 +41,16 @@ func envDuration(name string, def time.Duration) time.Duration {
 	return def
 }
 
+func resolveCurlPath() string {
+	if v := os.Getenv("CURL_PATH"); v != "" {
+		return v
+	}
+	if p, err := exec.LookPath("curl"); err == nil {
+		return p
+	}
+	return defaultCurlPath
+}
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cli" {
 		os.Exit(cli.RunCLI(os.Args[2:]))
@@ -53,7 +64,7 @@ func main() {
 	storePath := envOr("CRONIX_STORE_PATH", defaultStorePath)
 	runsPath := envOr("CRONIX_RUNS_PATH", defaultRunsPath)
 	httpAddr := envOr("CRONIX_HTTP_ADDR", defaultHTTPAddr)
-	curlPath := envOr("CURL_PATH", defaultCurlPath)
+	curlPath := resolveCurlPath()
 
 	ctrl, err := controller.NewController(store.NewFileStore(storePath), runstore.NewFileRunStore(runsPath), curlPath)
 	if err != nil {
@@ -88,6 +99,12 @@ func main() {
 	<-ctx.Done()
 
 	log.Printf("shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("api server shutdown: %v", err)
+	}
+
 	done := ctrl.Stop()
 	select {
 	case <-done:

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as api from '../api'
 import { handleApiError } from '../errors'
@@ -43,15 +43,15 @@ export default function Dashboard({ theme, onToggleTheme, logout }) {
   const [editing, setEditing] = useState(null)
   const [runPanel, setRunPanel] = useState(null)
 
-  const refresh = useMemo(
-    () => () =>
+  const refresh = useCallback(
+    () =>
       api.listJobs()
         .then((j) => {
           setJobs(Array.isArray(j) ? j : [])
           setError('')
         })
         .catch((e) => handleApiError(e, { logout, setError })),
-    [],
+    [logout],
   )
 
   useEffect(() => {
@@ -65,6 +65,7 @@ export default function Dashboard({ theme, onToggleTheme, logout }) {
     const body = { ...form }
     delete body.id
     delete body.last_run
+    delete body.next_run
     const p = form.id
       ? api.updateJob(form.id, body)
       : api.createJob(body)

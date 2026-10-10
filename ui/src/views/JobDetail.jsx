@@ -85,7 +85,7 @@ export default function JobDetail({ logout }) {
       setNotFound(false)
       return api.listRuns(id).then((r) => setRuns((r && r.runs) || []))
     }).catch((e) => handleApiError(e, { logout, setError })).finally(() => setLoading(false))
-  }, [id])
+  }, [id, logout])
 
   useEffect(() => {
     refresh()
@@ -93,7 +93,7 @@ export default function JobDetail({ logout }) {
 
   const toggle = () => {
     api.updateJob(job.id, { ...job, enabled: !job.enabled })
-      .then((j) => { setJob({ ...j, last_run: job.last_run }); return api.listRuns(id).then((r) => setRuns((r && r.runs) || [])) })
+      .then((j) => { setJob(j); return api.listRuns(id).then((r) => setRuns((r && r.runs) || [])) })
       .catch((e) => handleApiError(e, { logout, setError }))
   }
 
