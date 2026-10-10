@@ -173,3 +173,30 @@ func TestRunHonorsRetryDelay(t *testing.T) {
 		t.Errorf("expected at least ~1s delay between retries, took %v", elapsed)
 	}
 }
+
+func TestRunTimesOutWhenCommandHangs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "curl")
+	script := "#!/bin/sh\nsleep 10\nexit 0\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write hanging fake curl: %v", err)
+	}
+	job := model.Job{Id: "j0", Schedule: "* * * * *", Curl: "curl http://example.com", Retries: 0}
+	start := time.Now()
+	results, err := RunWithTimeout(job, path, 100*time.Millisecond)
+	if err == nil {
+		t.Fatal("want error when command times out")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("command should time out quickly, took %v", elapsed)
+	}
+	if len(results) != 1 {
+		t.Fatalf("want 1 result, got %d", len(results))
+	}
+	if results[0].ExitCode != 124 {
+		t.Errorf("want exit code 124, got %d", results[0].ExitCode)
+	}
+	if !strings.Contains(results[0].Output, "timed out") {
+		t.Errorf("output should mention timeout, got %q", results[0].Output)
+	}
+}

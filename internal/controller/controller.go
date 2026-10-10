@@ -29,16 +29,18 @@ func wrapValidation(format string, a ...any) error {
 }
 
 type Controller struct {
-	mu       sync.Mutex
-	runMu    sync.Mutex
-	store    store.Store
-	runStore runstore.RunStore
-	cron     *cron.Cron
-	jobs     map[string]model.Job
-	order    []string
-	entries  map[string]cron.EntryID
-	runs     map[string][]model.Run
-	curlPath string
+	mu         sync.Mutex
+	jobLocksMu sync.Mutex
+	jobLocks   map[string]*sync.Mutex
+	runStoreMu sync.Mutex
+	store      store.Store
+	runStore   runstore.RunStore
+	cron       *cron.Cron
+	jobs       map[string]model.Job
+	order      []string
+	entries    map[string]cron.EntryID
+	runs       map[string][]model.Run
+	curlPath   string
 }
 
 func NewController(store store.Store, runStore runstore.RunStore, curlPath string) (*Controller, error) {
@@ -49,6 +51,7 @@ func NewController(store store.Store, runStore runstore.RunStore, curlPath strin
 		jobs:     map[string]model.Job{},
 		entries:  map[string]cron.EntryID{},
 		runs:     map[string][]model.Run{},
+		jobLocks: map[string]*sync.Mutex{},
 		curlPath: curlPath,
 	}
 	stored, err := store.Load()
@@ -181,9 +184,9 @@ func (c *Controller) Update(id string, next model.Job) (model.Job, error) {
 
 func (c *Controller) Delete(id string) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	cur, ok := c.jobs[id]
 	if !ok {
+		c.mu.Unlock()
 		return fmt.Errorf("%w: %s", model.ErrNotFound, id)
 	}
 	pos := c.orderIndex(id)
@@ -197,10 +200,20 @@ func (c *Controller) Delete(id string) error {
 		if err := c.register(cur); err != nil {
 			log.Printf("rollback: re-register %s: %v", id, err)
 		}
+		c.mu.Unlock()
 		return err
 	}
 	delete(c.runs, id)
-	if err := c.runStore.SaveRuns(c.runsSnapshot()); err != nil {
+	snapshot := c.runsSnapshot()
+	c.mu.Unlock()
+
+	c.jobLocksMu.Lock()
+	delete(c.jobLocks, id)
+	c.jobLocksMu.Unlock()
+
+	c.runStoreMu.Lock()
+	defer c.runStoreMu.Unlock()
+	if err := c.runStore.SaveRuns(snapshot); err != nil {
 		log.Printf("run history save: %v", err)
 	}
 	log.Printf("job=%s deleted", id)
@@ -232,15 +245,20 @@ func (c *Controller) recordRun(job model.Job, trigger string, results []model.Re
 		Results:  results,
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if _, ok := c.jobs[job.Id]; !ok {
+		c.mu.Unlock()
 		return
 	}
 	c.runs[job.Id] = append([]model.Run{run}, c.runs[job.Id]...)
 	if len(c.runs[job.Id]) > runHistoryCap {
 		c.runs[job.Id] = c.runs[job.Id][:runHistoryCap]
 	}
-	if err := c.runStore.SaveRuns(c.runsSnapshot()); err != nil {
+	snapshot := c.runsSnapshot()
+	c.mu.Unlock()
+
+	c.runStoreMu.Lock()
+	defer c.runStoreMu.Unlock()
+	if err := c.runStore.SaveRuns(snapshot); err != nil {
 		log.Printf("run history save: %v", err)
 	}
 }
@@ -333,8 +351,9 @@ func (c *Controller) Run(id string) ([]model.Result, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", model.ErrNotFound, id)
 	}
-	c.runMu.Lock()
-	defer c.runMu.Unlock()
+	jobMu := c.getJobLock(id)
+	jobMu.Lock()
+	defer jobMu.Unlock()
 	results, err := runner.Run(job, c.curlPath)
 	c.recordRun(job, "manual", results, err)
 	return results, err
@@ -418,8 +437,12 @@ func (c *Controller) fire(id string) {
 	if !ok {
 		return
 	}
-	c.runMu.Lock()
-	defer c.runMu.Unlock()
+	jobMu := c.getJobLock(id)
+	if !jobMu.TryLock() {
+		log.Printf("job=%s schedule=%q is already running; skipping fire", job.Id, job.Schedule)
+		return
+	}
+	defer jobMu.Unlock()
 	results, err := runner.Run(job, c.curlPath)
 	c.recordRun(job, "scheduled", results, err)
 	if err != nil {
@@ -430,6 +453,17 @@ func (c *Controller) fire(id string) {
 		log.Printf("job=%s name=%s schedule=%q attempt=%d/%d exit=%d output=%s",
 			job.Id, job.Name, job.Schedule, r.Attempt, r.Total, r.ExitCode, strings.TrimSpace(r.Output))
 	}
+}
+
+func (c *Controller) getJobLock(id string) *sync.Mutex {
+	c.jobLocksMu.Lock()
+	defer c.jobLocksMu.Unlock()
+	mu, ok := c.jobLocks[id]
+	if !ok {
+		mu = &sync.Mutex{}
+		c.jobLocks[id] = mu
+	}
+	return mu
 }
 
 // jobByID copies the live job under the controller mutex. It is used by both

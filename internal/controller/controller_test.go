@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -539,4 +540,87 @@ func TestNewControllerLoadsAndPrunesRunHistory(t *testing.T) {
 	if ls := c.LastRun("ghost"); ls != nil {
 		t.Error("runs for unknown jobs must be pruned at load")
 	}
+}
+
+func TestControllerConcurrentDifferentJobs(t *testing.T) {
+	dir := t.TempDir()
+	script := `#!/bin/sh
+file="$1"
+touch "$file"
+peer="$2"
+for i in $(seq 1 50); do
+  if [ -f "$peer" ]; then
+    exit 0
+  fi
+  sleep 0.02
+done
+exit 1
+`
+	path := filepath.Join(dir, "curl")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	fileA := filepath.Join(dir, "a.running")
+	fileB := filepath.Join(dir, "b.running")
+
+	c, err := NewController(&memStore{jobs: []model.Job{
+		{Id: "a", Schedule: "* * * * *", Curl: fmt.Sprintf("curl %s %s", fileA, fileB), Enabled: true},
+		{Id: "b", Schedule: "* * * * *", Curl: fmt.Sprintf("curl %s %s", fileB, fileA), Enabled: true},
+	}}, &memRunStore{}, path)
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var errA, errB error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, errA = c.Run("a")
+	}()
+	go func() {
+		defer wg.Done()
+		_, errB = c.Run("b")
+	}()
+	wg.Wait()
+
+	if errA != nil {
+		t.Errorf("job a failed: %v", errA)
+	}
+	if errB != nil {
+		t.Errorf("job b failed: %v", errB)
+	}
+}
+
+func TestControllerFireSkipsIfAlreadyRunning(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "curl")
+	script := "#!/bin/sh\nsleep 0.2\nexit 0\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	c, err := NewController(&memStore{jobs: []model.Job{
+		{Id: "a", Schedule: "* * * * *", Curl: "curl x", Enabled: true},
+	}}, &memRunStore{}, path)
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+
+	started := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		close(started)
+		c.Run("a")
+		close(done)
+	}()
+	<-started
+	time.Sleep(50 * time.Millisecond)
+
+	fireStart := time.Now()
+	c.fire("a")
+	if elapsed := time.Since(fireStart); elapsed > 50*time.Millisecond {
+		t.Errorf("fire should skip immediately when already running, took %v", elapsed)
+	}
+	<-done
 }

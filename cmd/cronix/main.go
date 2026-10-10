@@ -79,7 +79,10 @@ func main() {
 	ctrl.Start()
 
 	srv := &http.Server{
-		Addr: httpAddr,
+		Addr:         httpAddr,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 5 * time.Minute,
+		IdleTimeout:  120 * time.Second,
 		Handler: api.NewServer(ctrl, api.AuthConfig{
 			Token:      token,
 			Username:   envOr("CRONIX_USERNAME", "admin"),
